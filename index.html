@@ -17,7 +17,13 @@
     />
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
+      // Cấu hình worker cho pdf.js
+      if (window['pdfjs-dist/build/pdf']) {
+        window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+      
       tailwind.config = {
         darkMode: 'class',
         theme: {
@@ -83,6 +89,20 @@
       .docx-content h3 { font-size: 16px; }
       .docx-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
       .docx-content td, .docx-content th { border: 1px solid #cbd5e1; padding: 8px; }
+      
+      /* PDF Custom Styles */
+      .pdf-canvas-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        padding: 20px;
+      }
+      .pdf-page-wrapper {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        background: white;
+        border: 1px solid #e2e8f0;
+      }
     </style>
   <script type="importmap">
 {

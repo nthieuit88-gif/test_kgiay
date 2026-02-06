@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Page } from './types';
 import Login from './pages/Login';
@@ -34,7 +35,6 @@ const App: React.FC = () => {
   }
 
   if (currentPage === Page.MEETING_DETAIL) {
-    // Meeting detail has its own specific layout structure (no standard sidebar)
     return <MeetingDetail onBack={() => setCurrentPage(Page.DASHBOARD)} />;
   }
 

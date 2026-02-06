@@ -1,222 +1,423 @@
-import React from 'react';
 
-const Calendar: React.FC = () => {
+import React, { useState, useMemo, useRef } from 'react';
+import { Meeting, MeetingDocument, Room } from '../types';
+
+interface CalendarProps {
+  meetings: Meeting[];
+  onAddMeeting: (meeting: Meeting) => void;
+  onUpdateMeeting: (meeting: Meeting) => void;
+}
+
+type ViewMode = 'day' | 'week' | 'month';
+
+const ROOMS_DATA: Room[] = [
+  { id: 'room-1', name: 'Phòng Khánh Tiết', location: 'Tầng 1 - Khu A', capacity: '20 - 30', area: '120m²', image: '', status: 'available', amenities: [] },
+  { id: 'room-2', name: 'Phòng Họp 202', location: 'Tầng 2 - Khu B', capacity: '8 - 10', area: '45m²', image: '', status: 'busy', amenities: [] },
+  { id: 'room-3', name: 'Hội Trường A', location: 'Tầng 3 - Trung Tâm', capacity: '200+', area: '500m²', image: '', status: 'available', amenities: [] }
+];
+
+const Calendar: React.FC<CalendarProps> = ({ meetings, onAddMeeting, onUpdateMeeting }) => {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+
+  const [bookingForm, setBookingForm] = useState({
+    title: '',
+    date: currentDate.toISOString().split('T')[0],
+    startTime: '09:00',
+    endTime: '10:00',
+    participants: 10,
+    roomId: 'room-1',
+    files: [] as File[]
+  });
+
+  // Điều hướng thời gian
+  const navigateDate = (direction: number) => {
+    const newDate = new Date(currentDate);
+    if (viewMode === 'day') {
+      newDate.setDate(currentDate.getDate() + direction);
+    } else if (viewMode === 'week') {
+      newDate.setDate(currentDate.getDate() + direction * 7);
+    } else {
+      newDate.setMonth(currentDate.getMonth() + direction);
+    }
+    setCurrentDate(newDate);
+    setBookingForm(prev => ({ ...prev, date: newDate.toISOString().split('T')[0] }));
+  };
+
+  const goToToday = () => {
+    const today = new Date();
+    setCurrentDate(today);
+    setBookingForm(prev => ({ ...prev, date: today.toISOString().split('T')[0] }));
+  };
+
+  const handleOpenBooking = () => {
+    setBookingForm({
+      title: '',
+      date: currentDate.toISOString().split('T')[0],
+      startTime: '09:00',
+      endTime: '10:00',
+      participants: 10,
+      roomId: 'room-1',
+      files: []
+    });
+    setShowBookingModal(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      const totalFiles = [...bookingForm.files, ...newFiles].slice(0, 10);
+      setBookingForm({ ...bookingForm, files: totalFiles });
+      if (bookingForm.files.length + newFiles.length > 10) {
+        alert("Chỉ được phép tải lên tối đa 10 tài liệu cho mỗi phiên họp.");
+      }
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setBookingForm({ ...bookingForm, files: bookingForm.files.filter((_, i) => i !== index) });
+  };
+
+  const handleBookingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const attachedDocs: MeetingDocument[] = bookingForm.files.map(f => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: f.name,
+      size: `${(f.size / 1024 / 1024).toFixed(2)} MB`,
+      type: f.name.split('.').pop() || 'file',
+      file: f,
+      url: URL.createObjectURL(f)
+    }));
+
+    const newMeeting: Meeting = {
+      id: Math.random().toString(36).substr(2, 9),
+      title: bookingForm.title,
+      startTime: `${bookingForm.date}T${bookingForm.startTime}:00`,
+      endTime: `${bookingForm.date}T${bookingForm.endTime}:00`,
+      roomId: bookingForm.roomId,
+      host: 'Nguyễn Văn A (Tôi)',
+      participants: bookingForm.participants,
+      status: 'pending',
+      color: 'blue',
+      documents: attachedDocs
+    };
+
+    onAddMeeting(newMeeting);
+    setShowBookingModal(false);
+    alert('Đã gửi yêu cầu đặt lịch thành công!');
+  };
+
+  // Drag and Drop Handlers
+  const handleDragStart = (e: React.DragEvent, meeting: Meeting) => {
+    e.dataTransfer.setData('meetingId', meeting.id);
+    e.dataTransfer.effectAllowed = 'move';
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    e.dataTransfer.setData('offsetY', offsetY.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const meetingId = e.dataTransfer.getData('meetingId');
+    const offsetY = parseFloat(e.dataTransfer.getData('offsetY') || '0');
+    const meeting = meetings.find(m => m.id === meetingId);
+    
+    if (meeting && gridContainerRef.current) {
+      const rect = gridContainerRef.current.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top - offsetY;
+      const totalMinutes = (relativeY / 100) * 60;
+      const hoursFromSeven = Math.floor(totalMinutes / 60);
+      const remainingMinutes = Math.round((totalMinutes % 60) / 15) * 15;
+      const newStartHour = 7 + hoursFromSeven;
+      const newStartMin = remainingMinutes;
+      if (newStartHour < 7 || newStartHour > 20) return;
+      const oldStart = new Date(meeting.startTime);
+      const oldEnd = new Date(meeting.endTime);
+      const durationMs = oldEnd.getTime() - oldStart.getTime();
+      const newStart = new Date(oldStart);
+      newStart.setHours(newStartHour, newStartMin, 0, 0);
+      const newEnd = new Date(newStart.getTime() + durationMs);
+      onUpdateMeeting({
+        ...meeting,
+        startTime: newStart.toISOString(),
+        endTime: newEnd.toISOString()
+      });
+    }
+  };
+
+  const headerLabel = useMemo(() => {
+    if (viewMode === 'day') {
+      return currentDate.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    }
+    if (viewMode === 'month') {
+      return currentDate.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+    }
+    return `Tháng ${currentDate.getMonth() + 1}, ${currentDate.getFullYear()}`;
+  }, [currentDate, viewMode]);
+
+  const filteredMeetings = useMemo(() => {
+    return meetings.filter(m => {
+      const mDate = new Date(m.startTime);
+      return mDate.getDate() === currentDate.getDate() &&
+             mDate.getMonth() === currentDate.getMonth() &&
+             mDate.getFullYear() === currentDate.getFullYear();
+    });
+  }, [meetings, currentDate]);
+
+  const monthDays = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const days = [];
+    for (let i = 0; i < (firstDay === 0 ? 6 : firstDay - 1); i++) {
+      days.push({ day: null, currentMonth: false });
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({ 
+        day: i, 
+        currentMonth: true, 
+        isToday: i === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear(),
+        isSelected: i === currentDate.getDate()
+      });
+    }
+    return days;
+  }, [currentDate]);
+
   return (
-    <main className="flex-1 flex flex-col h-screen overflow-hidden relative bg-white">
+    <main className="flex-1 flex flex-col h-screen overflow-hidden relative bg-[#f8fafc] page-transition">
       <header className="shrink-0 z-20 bg-white/95 backdrop-blur-md px-6 py-4 flex items-center justify-between border-b border-slate-200 shadow-sm">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">calendar_clock</span>
-            Lịch họp hệ thống
-          </h2>
-          <div className="h-6 w-px bg-slate-300"></div>
-          <div className="flex bg-slate-100 p-1 rounded-lg">
-            <button className="px-3 py-1 text-xs font-medium text-slate-500 hover:text-slate-900 rounded-md transition-all">Ngày</button>
-            <button className="px-3 py-1 text-xs font-bold bg-white text-slate-900 shadow-sm rounded-md transition-all">Tuần</button>
-            <button className="px-3 py-1 text-xs font-medium text-slate-500 hover:text-slate-900 rounded-md transition-all">Tháng</button>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+              <span className="material-symbols-outlined fill text-[24px]">calendar_month</span>
+            </div>
+            <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Lịch trình</h2>
+          </div>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setViewMode('day')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${viewMode === 'day' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Ngày</button>
+            <button onClick={() => setViewMode('month')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${viewMode === 'month' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Tháng</button>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="relative w-64 hidden md:block">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-            <input
-              className="w-full bg-slate-50 border border-slate-200 text-sm rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 text-slate-700 placeholder-slate-400 transition-all hover:bg-slate-100 focus:bg-white"
-              placeholder="Tìm phòng, chủ trì..."
-              type="text"
-            />
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+            <button onClick={() => navigateDate(-1)} className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors"><span className="material-symbols-outlined">chevron_left</span></button>
+            <button onClick={goToToday} className="px-3 py-1 text-xs font-bold text-slate-600 hover:text-primary transition-colors border-x border-slate-100">Hôm nay</button>
+            <button onClick={() => navigateDate(1)} className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors"><span className="material-symbols-outlined">chevron_right</span></button>
           </div>
-          <button className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
-            <span className="material-symbols-outlined">notifications</span>
-            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+          <button onClick={handleOpenBooking} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-glow-blue transition-all active:scale-95">
+            <span className="material-symbols-outlined text-[20px]">add</span>
+            Đặt lịch
           </button>
         </div>
       </header>
-      <div className="shrink-0 px-6 py-4 flex flex-wrap items-center justify-between gap-4 bg-white border-b border-slate-200">
-        <div className="flex items-center gap-4">
-          <button className="px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-sm font-medium text-slate-700 transition-colors">Hôm nay</button>
-          <div className="flex items-center gap-2">
-            <button className="p-1 hover:bg-slate-100 rounded-full transition-colors"><span className="material-symbols-outlined text-slate-600">chevron_left</span></button>
-            <button className="p-1 hover:bg-slate-100 rounded-full transition-colors"><span className="material-symbols-outlined text-slate-600">chevron_right</span></button>
-          </div>
-          <h3 className="text-lg font-bold text-slate-800">Tháng 10, 2023</h3>
-        </div>
-        <button className="group flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-blue-200 transition-all hover:-translate-y-0.5">
-          <span className="material-symbols-outlined text-[20px] group-hover:rotate-90 transition-transform duration-300">add</span>
-          Đặt lịch họp
-        </button>
-      </div>
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col bg-white">
-          <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
-            <div className="p-3 text-center border-r border-slate-200 text-xs font-medium text-slate-400">
-              GMT+7
-            </div>
-            {['T2 (25)', 'T3 (26)', 'T4 (27)', 'T5 (28)'].map(day => {
-              const [d, date] = day.split(' ');
-              return (
-                <div key={day} className="p-3 text-center border-r border-slate-200">
-                  <span className="block text-xs font-medium text-slate-500 uppercase">{d}</span>
-                  <span className="block text-xl font-bold text-slate-700">{date.replace(/[()]/g, '')}</span>
-                </div>
-              );
-            })}
-            <div className="p-3 text-center border-r border-slate-200 bg-blue-50/50">
-              <span className="block text-xs font-bold text-primary uppercase">T6</span>
-              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary text-white text-xl font-bold shadow-md shadow-blue-200 mt-1">29</div>
-            </div>
-             {['T7 (30)', 'CN (1)'].map(day => {
-              const [d, date] = day.split(' ');
-              return (
-                <div key={day} className="p-3 text-center border-r border-slate-200 last:border-r-0">
-                  <span className="block text-xs font-medium text-slate-500 uppercase">{d}</span>
-                  <span className="block text-xl font-bold text-slate-700">{date.replace(/[()]/g, '')}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="relative grid grid-cols-[60px_repeat(7,1fr)] flex-1 min-h-[1000px]">
-             {/* Background Grid Lines */}
-             <div className="col-span-8 absolute inset-0 grid grid-rows-[repeat(11,1fr)] pointer-events-none z-0">
-                {Array.from({length: 11}).map((_, i) => (
-                    <div key={i} className="border-b border-slate-100"></div>
-                ))}
-             </div>
-            {/* Time Column */}
-            <div className="border-r border-slate-200 bg-white text-xs text-slate-400 font-medium text-center grid grid-rows-[repeat(11,1fr)] z-10">
-                {[8,9,10,11,12,13,14,15,16,17,18].map(h => (
-                     <span key={h} className="relative -top-2.5">{h < 10 ? `0${h}` : h}:00</span>
-                ))}
-            </div>
 
-            {/* Event Columns */}
-            {/* Mon */}
-            <div className="border-r border-slate-200 relative group hover:bg-slate-50 transition-colors">
-              <div className="absolute top-[9.09%] left-1 right-1 h-[18.18%] bg-blue-50 border-l-4 border-primary rounded px-2 py-1.5 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02] transition-all">
-                <p className="text-[10px] font-bold text-primary mb-0.5">09:00 - 11:00</p>
-                <p className="text-xs font-bold text-slate-800 leading-tight line-clamp-2">Giao ban tuần - Phòng Marketing</p>
-                <div className="mt-1 flex items-center gap-1">
-                  <span className="w-4 h-4 rounded-full bg-slate-300 bg-cover" style={{backgroundImage: "url('https://i.pravatar.cc/150?u=a')"}}></span>
-                  <span className="text-[10px] text-slate-500">Nguyễn Văn A</span>
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden bg-white">
+          <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-2xl font-black text-slate-800 capitalize">{headerLabel}</h3>
+            {viewMode === 'day' && <span className="text-sm font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">{filteredMeetings.length} cuộc họp</span>}
+          </div>
+          <div className="flex-1 overflow-y-auto relative custom-scrollbar">
+            {viewMode === 'day' ? (
+              <div className="grid grid-cols-[100px_1fr] min-h-[1400px]">
+                <div className="border-r border-slate-100 bg-slate-50/30">
+                  {Array.from({ length: 14 }).map((_, i) => (
+                    <div key={i} className="h-[100px] border-b border-slate-50 p-4 text-right">
+                      <span className="text-xs font-black text-slate-400">{i + 7}:00</span>
+                    </div>
+                  ))}
+                </div>
+                <div ref={gridContainerRef} onDragOver={handleDragOver} onDrop={handleDrop} className="relative p-4 pattern-grid transition-colors duration-200">
+                  {filteredMeetings.length === 0 ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 opacity-60">
+                      <span className="material-symbols-outlined text-6xl mb-2">event_busy</span>
+                      <p className="font-bold">Không có lịch trình cho ngày này</p>
+                    </div>
+                  ) : (
+                    filteredMeetings.map((meeting) => {
+                      const start = new Date(meeting.startTime);
+                      const end = new Date(meeting.endTime);
+                      const top = (start.getHours() - 7) * 100 + (start.getMinutes() / 60) * 100;
+                      const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+                      const height = duration * 100;
+                      return (
+                        <div key={meeting.id} draggable onDragStart={(e) => handleDragStart(e, meeting)} className={`absolute left-6 right-6 rounded-2xl border-l-[6px] shadow-soft p-5 cursor-move transition-all hover:shadow-xl hover:z-10 group ${meeting.color === 'blue' ? 'bg-blue-50 border-blue-500 text-blue-700' : meeting.color === 'purple' ? 'bg-purple-50 border-purple-500 text-purple-700' : meeting.color === 'orange' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-emerald-50 border-emerald-500 text-emerald-700'}`} style={{ top: `${top}px`, height: `${height}px`, minHeight: '80px' }}>
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="material-symbols-outlined text-[14px] opacity-70">schedule</span>
+                                <p className="text-[11px] font-black uppercase tracking-widest opacity-80">{start.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p>
+                              </div>
+                              <h4 className="font-extrabold text-slate-800 text-lg leading-tight group-hover:text-primary transition-colors">{meeting.title}</h4>
+                            </div>
+                            <div className="flex -space-x-2">
+                               {[1,2,3].map(i => <div key={i} className="w-7 h-7 rounded-full border-2 border-white bg-slate-200 bg-cover" style={{backgroundImage: `url('https://i.pravatar.cc/100?u=${meeting.id}${i}')`}}></div>)}
+                               <div className="w-7 h-7 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">+{meeting.participants - 3}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs font-bold opacity-70 mt-auto">
+                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">meeting_room</span> {ROOMS_DATA.find(r => r.id === meeting.roomId)?.name || meeting.roomId}</span>
+                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">person</span> {meeting.host}</span>
+                          </div>
+                          <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-40 transition-opacity">
+                            <span className="material-symbols-outlined text-sm">drag_pan</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
-            </div>
-            {/* Tue */}
-            <div className="border-r border-slate-200 relative group hover:bg-slate-50 transition-colors">
-               <div className="absolute top-[54.54%] left-1 right-1 h-[9.09%] bg-green-50 border-l-4 border-green-500 rounded px-2 py-1.5 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02] transition-all">
-                <p className="text-[10px] font-bold text-green-600 mb-0.5">14:00 - 15:00</p>
-                <p className="text-xs font-bold text-slate-800 leading-tight">Review thiết kế UI/UX</p>
-              </div>
-            </div>
-            {/* Wed */}
-            <div className="border-r border-slate-200 relative group hover:bg-slate-50 transition-colors">
-               <div className="absolute top-[18.18%] left-1 right-1 h-[18.18%] bg-orange-50 border-l-4 border-orange-500 rounded px-2 py-1.5 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02] transition-all opacity-90 border-dashed border-l-solid">
-                <div className="flex items-center gap-1 mb-0.5">
-                  <p className="text-[10px] font-bold text-orange-600">10:00 - 12:00</p>
-                  <span className="material-symbols-outlined text-[10px] text-orange-500">hourglass_empty</span>
-                </div>
-                <p className="text-xs font-bold text-slate-800 leading-tight">Đào tạo nhân sự mới (Chờ duyệt)</p>
-                <div className="mt-1 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[12px] text-slate-400">meeting_room</span>
-                  <span className="text-[10px] text-slate-500">P.301</span>
-                </div>
-              </div>
-            </div>
-            {/* Thu */}
-            <div className="border-r border-slate-200 relative group hover:bg-slate-50 transition-colors"></div>
-            {/* Fri (Current Day) */}
-            <div className="border-r border-slate-200 bg-blue-50/20 relative group transition-colors">
-                <div className="absolute top-[40%] left-0 right-0 border-t-2 border-red-500 z-30 pointer-events-none flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-red-500 -ml-1"></div>
-                    <span className="text-[10px] font-bold text-red-500 bg-white px-1 ml-1 rounded shadow-sm">12:24</span>
-                </div>
-               <div className="absolute top-[4.5%] left-1 right-1 h-[13.6%] bg-purple-50 border-l-4 border-purple-500 rounded px-2 py-1.5 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02] transition-all">
-                <p className="text-[10px] font-bold text-purple-600 mb-0.5">08:30 - 10:00</p>
-                <p className="text-xs font-bold text-slate-800 leading-tight">Họp Hội Đồng Quản Trị</p>
-                <div className="mt-1 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[12px] text-slate-400">location_on</span>
-                  <span className="text-[10px] text-slate-500">Phòng VIP</span>
+            ) : (
+              <div className="p-8 h-full">
+                <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-3xl overflow-hidden shadow-soft">
+                  {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => <div key={day} className="bg-slate-50/80 p-4 text-center text-xs font-black text-slate-400 uppercase tracking-widest">{day}</div>)}
+                  {monthDays.map((date, i) => {
+                    const meetingsOnDay = meetings.filter(m => {
+                      const mDate = new Date(m.startTime);
+                      return mDate.getDate() === date.day && mDate.getMonth() === currentDate.getMonth() && mDate.getFullYear() === currentDate.getFullYear();
+                    });
+                    return (
+                      <div key={i} onClick={() => { if (date.day) { const newDate = new Date(currentDate); newDate.setDate(date.day); setCurrentDate(newDate); setViewMode('day'); } }} className={`bg-white min-h-[140px] p-4 transition-all border-b border-r border-slate-100 flex flex-col gap-2 ${date.currentMonth ? 'hover:bg-blue-50/50 cursor-pointer' : 'bg-slate-50/30'} ${date.isSelected && date.currentMonth ? 'ring-2 ring-primary ring-inset z-10' : ''}`}>
+                        <div className="flex justify-between items-center">
+                          <span className={`text-sm font-black ${date.currentMonth ? (date.isToday ? 'bg-primary text-white w-7 h-7 flex items-center justify-center rounded-lg shadow-glow-blue' : 'text-slate-800') : 'text-slate-200'}`}>{date.day}</span>
+                        </div>
+                        <div className="flex-1 flex flex-col gap-1 overflow-hidden">
+                          {meetingsOnDay.slice(0, 3).map(m => <div key={m.id} className={`px-2 py-1 rounded-md text-[10px] font-bold truncate ${m.color === 'blue' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{m.title}</div>)}
+                          {meetingsOnDay.length > 3 && <span className="text-[9px] font-black text-slate-400 ml-1">+{meetingsOnDay.length - 3} cuộc họp khác</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="absolute top-[63.63%] left-1 right-1 h-[18.18%] bg-blue-50 border-l-4 border-primary rounded px-2 py-1.5 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02] transition-all">
-                <p className="text-[10px] font-bold text-primary mb-0.5">15:00 - 17:00</p>
-                <p className="text-xs font-bold text-slate-800 leading-tight">Demo sản phẩm với khách hàng</p>
-                <div className="mt-2 flex -space-x-1.5">
-                   {[1,2].map(i => <div key={i} className="w-5 h-5 rounded-full border border-white bg-cover" style={{backgroundImage: `url('https://i.pravatar.cc/150?u=${i+10}')`}}></div>)}
-                  <div className="w-5 h-5 rounded-full border border-white bg-slate-200 text-slate-600 text-[8px] flex items-center justify-center font-bold">+2</div>
-                </div>
-              </div>
-            </div>
-            {/* Sat */}
-            <div className="border-r border-slate-200 relative group hover:bg-slate-50 transition-colors bg-slate-50/30"></div>
-            {/* Sun */}
-            <div className="relative group hover:bg-slate-50 transition-colors bg-slate-50/30"></div>
+            )}
           </div>
         </div>
-        <aside className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 z-10 shadow-xl hidden lg:flex">
-          <div className="p-5 border-b border-slate-200">
-            <h3 className="font-bold text-slate-800 text-base mb-4">Lịch nhanh</h3>
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-bold text-slate-700">Tháng 10, 2023</span>
-                <div className="flex gap-1">
-                  <button className="p-1 hover:bg-slate-200 rounded text-slate-500"><span className="material-symbols-outlined text-sm">chevron_left</span></button>
-                  <button className="p-1 hover:bg-slate-200 rounded text-slate-500"><span className="material-symbols-outlined text-sm">chevron_right</span></button>
+
+        {viewMode === 'day' && (
+          <aside className="w-80 border-l border-slate-100 bg-white/50 backdrop-blur-sm p-6 hidden xl:flex flex-col gap-8">
+            <div className="space-y-4">
+              <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Tóm tắt ngày</h4>
+              <div className="grid grid-cols-1 gap-3">
+                 <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-soft">
+                    <p className="text-xs font-bold text-slate-400 mb-1">Tổng thời gian họp</p>
+                    <p className="text-xl font-black text-slate-800">4.5 Giờ</p>
+                 </div>
+                 <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-soft">
+                    <p className="text-xs font-bold text-slate-400 mb-1">Đại biểu tham dự</p>
+                    <p className="text-xl font-black text-slate-800">28 Người</p>
+                 </div>
+              </div>
+            </div>
+            <div className="space-y-4 flex-1">
+              <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Phòng họp bận</h4>
+              <div className="space-y-2">
+                 {ROOMS_DATA.map(room => (
+                   <div key={room.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                     <span className="text-xs font-bold text-slate-600">{room.name}</span>
+                     <span className={`w-2 h-2 rounded-full ${meetings.some(m => m.roomId === room.id && new Date(m.startTime).getDate() === currentDate.getDate()) ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></span>
+                   </div>
+                 ))}
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
+
+      {/* Booking Modal */}
+      {showBookingModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[28px]">add_task</span>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">Đặt lịch mới</h2>
+                  <p className="text-sm text-slate-500 font-medium">Lên kế hoạch họp cho tổ chức</p>
                 </div>
               </div>
-              <div className="grid grid-cols-7 text-center gap-y-2 text-xs">
-                 {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(d => <span key={d} className="text-slate-400 font-medium">{d}</span>)}
-                 {[25,26,27,28].map(d => <span key={d} className="text-slate-400 py-1">{d}</span>)}
-                 <span className="text-white bg-primary rounded-full w-6 h-6 flex items-center justify-center mx-auto shadow-sm">29</span>
-                 {[30,1,2,3,4,5,6,7,8].map(d => <span key={d} className="text-slate-600 py-1">{d}</span>)}
-              </div>
+              <button onClick={() => setShowBookingModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><span className="material-symbols-outlined">close</span></button>
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            <div>
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Phòng họp</h4>
+            
+            <form onSubmit={handleBookingSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
               <div className="space-y-2">
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input defaultChecked className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary bg-slate-100" type="checkbox" />
-                  <span className="text-sm text-slate-700 group-hover:text-primary transition-colors">Tất cả phòng</span>
-                </label>
-                 <label className="flex items-center gap-3 cursor-pointer group">
-                  <input defaultChecked className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary bg-slate-100" type="checkbox" />
-                  <div className="flex items-center gap-2 text-sm text-slate-600 group-hover:text-primary transition-colors">
-                    <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                    Phòng VIP (Tầng 5)
-                  </div>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input defaultChecked className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary bg-slate-100" type="checkbox" />
-                  <div className="flex items-center gap-2 text-sm text-slate-600 group-hover:text-primary transition-colors">
-                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                    Phòng họp Lớn (Tầng 3)
-                  </div>
-                </label>
+                <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Tiêu đề cuộc họp</label>
+                <input required value={bookingForm.title} onChange={e => setBookingForm({...bookingForm, title: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 placeholder-slate-300 transition-all" placeholder="Ví dụ: Họp giao ban đầu tuần" />
               </div>
-            </div>
-             <div>
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Trạng thái</h4>
-              <div className="space-y-2">
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input defaultChecked className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary bg-slate-100" type="checkbox" />
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <span className="material-symbols-outlined text-[16px] text-green-500">check_circle</span>
-                    Đã duyệt
-                  </div>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input defaultChecked className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary bg-slate-100" type="checkbox" />
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <span className="material-symbols-outlined text-[16px] text-orange-500">pending</span>
-                    Chờ duyệt
-                  </div>
-                </label>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Ngày họp</label>
+                  <input type="date" required value={bookingForm.date} onChange={e => setBookingForm({...bookingForm, date: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Chọn phòng họp</label>
+                  <select value={bookingForm.roomId} onChange={e => setBookingForm({...bookingForm, roomId: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all">
+                    {ROOMS_DATA.map(r => <option key={r.id} value={r.id}>{r.name} ({r.location})</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Bắt đầu</label>
+                  <input type="time" required value={bookingForm.startTime} onChange={e => setBookingForm({...bookingForm, startTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Kết thúc</label>
+                  <input type="time" required value={bookingForm.endTime} onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Tài liệu đính kèm (Tối đa 10 file)</label>
+                  <span className="text-[10px] font-bold text-slate-400">{bookingForm.files.length}/10</span>
+                </div>
+                <div onClick={() => bookingForm.files.length < 10 && fileInputRef.current?.click()} className={`border-2 border-dashed rounded-[1.5rem] p-6 transition-all flex flex-col items-center justify-center gap-3 group cursor-pointer ${bookingForm.files.length >= 10 ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed' : 'border-slate-200 hover:border-primary hover:bg-primary/5'}`}>
+                  <input type="file" ref={fileInputRef} multiple onChange={handleFileChange} className="hidden" accept=".pdf,.docx,.xlsx,.pptx" />
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${bookingForm.files.length >= 10 ? 'bg-slate-200 text-slate-400' : 'bg-slate-100 text-slate-500 group-hover:bg-primary group-hover:text-white'}`}><span className="material-symbols-outlined text-[28px]">cloud_upload</span></div>
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-slate-700">Tải tài liệu lên</p>
+                    <p className="text-xs text-slate-400 mt-1">Hỗ trợ tối đa 10 tệp (PDF, Word, Excel, PPT)</p>
+                  </div>
+                </div>
+                {bookingForm.files.length > 0 && (
+                  <div className="grid grid-cols-1 gap-2 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    {bookingForm.files.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-xl group hover:border-slate-300 transition-all">
+                        <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-primary"><span className="material-symbols-outlined text-[20px]">{file.name.endsWith('.pdf') ? 'picture_as_pdf' : 'description'}</span></div>
+                        <div className="flex-1 overflow-hidden">
+                          <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{(file.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                        <button type="button" onClick={() => removeFile(idx)} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-4 pt-6 border-t border-slate-100 shrink-0">
+                <button type="button" onClick={() => setShowBookingModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-bold hover:bg-slate-200 transition-all">Hủy bỏ</button>
+                <button type="submit" className="flex-1 py-4 rounded-2xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-blue-600 active:scale-95 transition-all">Xác nhận đặt lịch</button>
+              </div>
+            </form>
           </div>
-        </aside>
-      </div>
+        </div>
+      )}
     </main>
   );
 };

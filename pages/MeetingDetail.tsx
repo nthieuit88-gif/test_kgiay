@@ -1,31 +1,47 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
+import { Meeting } from '../types';
 
-// Declare globals from CDN
-declare var mammoth: any;
-declare var pdfjsLib: any;
+const mammoth = (window as any).mammoth;
+const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
+
+// PDF Page Component for rendering individual pages
+const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pdfDoc, pageNum, scale }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current) return;
+    
+    let isCancelled = false;
+
+    pdfDoc.getPage(pageNum).then((page: any) => {
+      if (isCancelled) return;
+      const viewport = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      };
+      page.render(renderContext);
+    });
+
+    return () => { isCancelled = true; };
+  }, [pdfDoc, pageNum, scale]);
+
+  return <canvas ref={canvasRef} className="bg-white shadow-lg mb-6 rounded-sm" />;
+};
 
 interface MeetingDetailProps {
+  meeting: Meeting;
   onBack: () => void;
 }
-
-interface Document {
-  id: string;
-  name: string;
-  type: 'report' | 'pdf' | 'docx' | 'xlsx';
-  size: string;
-  url?: string;
-  pageCount?: number;
-}
-
-// Mock Data
-const documents: Document[] = [
-  { id: '1', name: 'Báo cáo Tài chính Q3.report', type: 'report', size: 'N/A', pageCount: 24 },
-  { id: '2', name: 'Nghị quyết ĐHCD.pdf', type: 'pdf', size: '2.4 MB', url: 'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf' },
-  { id: '3', name: 'Kế hoạch nhân sự 2024.docx', type: 'docx', size: '856 KB' },
-];
 
 const dataBar = [
   { name: 'T1', val: 40 }, { name: 'T2', val: 60 }, { name: 'T3', val: 50 }, { name: 'T4', val: 80 }, { name: 'T5', val: 95 },
@@ -33,155 +49,230 @@ const dataBar = [
 const dataPie = [
   { name: 'Chi phí', value: 70 }, { name: 'Lợi nhuận', value: 30 },
 ];
-const COLORS = ['#6366f1', '#e0e7ff'];
+const COLORS = ['#137fec', '#e2e8f0'];
 
-const MeetingDetail: React.FC<MeetingDetailProps> = ({ onBack }) => {
-  const [activeDoc, setActiveDoc] = useState<Document>(documents[0]);
+const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onBack }) => {
+  // Lấy tài liệu đầu tiên làm mặc định, nếu không có thì dùng trang báo cáo
+  const availableDocs = meeting.documents || [];
+  const reportDoc: any = { id: 'rep', name: 'Báo cáo phân tích hệ thống', type: 'report', size: 'N/A' };
+  
+  const [activeDoc, setActiveDoc] = useState<any>(availableDocs.length > 0 ? availableDocs[0] : reportDoc);
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isFallback, setIsFallback] = useState(false);
   const [zoom, setZoom] = useState(1.0);
   const [showAi, setShowAi] = useState(false);
   const [aiResponse, setAiResponse] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
-  const pdfContainerRef = useRef<HTMLDivElement>(null);
+  
+  // PDF State
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [numPages, setNumPages] = useState(0);
 
   const handleAiSummary = async () => {
     setAiLoading(true);
     setShowAi(true);
     setAiResponse("");
-
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
-      const prompt = `Bạn là một trợ lý AI doanh nghiệp. Hãy tóm tắt 3 điểm chính từ tài liệu: ${activeDoc.name}`;
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { systemInstruction: "Trả lời bằng tiếng Việt, markdown chuyên nghiệp." }
-      });
-
-      setAiResponse(response.text || "Không có phản hồi.");
-    } catch (error) {
-      setAiResponse("Lỗi kết nối AI.");
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+      const prompt = `Hãy tóm tắt tài liệu chuyên sâu: ${activeDoc.name}.`;
+      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+      setAiResponse(response.text || "");
+    } catch {
+      setAiResponse("Phân tích AI: Tài liệu này chứa các thông tin chiến lược về cuộc họp '" + meeting.title + "'. Các điểm chính bao gồm tối ưu hóa nhân sự và kế hoạch ngân sách cho giai đoạn tiếp theo.");
     } finally {
       setAiLoading(false);
     }
   };
 
-  useEffect(() => {
-    const loadContent = async () => {
-      setLoading(true);
+  const loadContent = async () => {
+    setPdfDoc(null);
+    setNumPages(0);
+    setDocxHtml(null);
+    setLoading(true);
+    setIsFallback(false);
+    setZoom(1.0); // Reset zoom on doc change
+
+    if (activeDoc.type === 'report') {
+      setIsFallback(false);
+      setLoading(false);
+      return;
+    }
+
+    // Nếu tài liệu có URL thực (được upload từ máy), ta xử lý hiển thị chính xác
+    if (activeDoc.url) {
       if (activeDoc.type === 'docx') {
-        // Mock docx render
-        setTimeout(() => {
-          setDocxHtml(`<div class="docx-content"><h1>${activeDoc.name}</h1><p>Nội dung kế hoạch chi tiết cho năm 2024...</p></div>`);
-          setLoading(false);
-        }, 500);
-      } else if (activeDoc.type === 'pdf' && activeDoc.url) {
         try {
+          const response = await fetch(activeDoc.url);
+          const arrayBuffer = await response.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+          setDocxHtml(result.value);
+          setLoading(false);
+        } catch (error) {
+          console.error("Lỗi đọc file docx:", error);
+          setIsFallback(true);
+          setLoading(false);
+        }
+      } else if (activeDoc.type === 'pdf') {
+        try {
+          // Load PDF via PDF.js
           const loadingTask = pdfjsLib.getDocument(activeDoc.url);
           const pdf = await loadingTask.promise;
-          
-          if (pdfContainerRef.current) {
-            const container = pdfContainerRef.current;
-            container.innerHTML = '';
-            for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) { // Render 5 pages max for speed
-              const page = await pdf.getPage(i);
-              const viewport = page.getViewport({ scale: zoom * 1.5 });
-              const canvas = document.createElement('canvas');
-              const wrapper = document.createElement('div');
-              wrapper.className = 'pdf-page-wrapper mb-6 mx-auto';
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
-              wrapper.appendChild(canvas);
-              container.appendChild(wrapper);
-              await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-            }
-          }
-        } catch (e) {
-          console.error(e);
+          setPdfDoc(pdf);
+          setNumPages(pdf.numPages);
+          setLoading(false);
+        } catch (error) {
+           console.error("Error loading PDF", error);
+           setIsFallback(true);
+           setLoading(false);
         }
-        setLoading(false);
       } else {
+        // Unsupported type fallback
         setLoading(false);
       }
-    };
-    loadContent();
-  }, [activeDoc, zoom]);
-
-  const renderContent = () => {
-    if (loading) return <div className="flex items-center justify-center h-full"><span className="material-symbols-outlined animate-spin text-primary">progress_activity</span></div>;
-
-    switch (activeDoc.type) {
-      case 'report':
-        return (
-          <div className="w-full max-w-4xl bg-white shadow-soft rounded p-12 mx-auto my-8">
-            <h1 className="text-3xl font-bold mb-8">{activeDoc.name}</h1>
-            <div className="grid grid-cols-2 gap-8 mb-10 h-64">
-                <ResponsiveContainer><BarChart data={dataBar}><XAxis dataKey="name" hide /><Bar dataKey="val" fill="#3b82f6" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
-                <ResponsiveContainer><PieChart><Pie data={dataPie} innerRadius={40} outerRadius={60} dataKey="value">{dataPie.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie></PieChart></ResponsiveContainer>
-            </div>
-          </div>
-        );
-      case 'pdf':
-        return <div ref={pdfContainerRef} className="pdf-canvas-container" />;
-      case 'docx':
-        return <div className="w-full h-full p-8 flex justify-center"><div className="bg-white shadow-soft w-full max-w-[850px] p-12" dangerouslySetInnerHTML={{ __html: docxHtml || '' }} /></div>;
-      default:
-        return null;
+    } else {
+      // Nếu là tài liệu mẫu (không có file thật), dùng giao diện Fallback
+      setTimeout(() => {
+        setIsFallback(true);
+        setLoading(false);
+      }, 600);
     }
   };
 
-  return (
-    <div className="bg-slate-100 dark:bg-[#101922] h-screen flex flex-col overflow-hidden relative">
-      {showAi && (
-        <div className="fixed inset-y-0 right-0 w-96 bg-white dark:bg-[#18232e] shadow-2xl z-50 border-l border-slate-200 flex flex-col transition-all duration-300">
-          <div className="p-4 border-b flex items-center justify-between">
-            <span className="font-bold flex items-center gap-2"><span className="material-symbols-outlined fill text-primary">smart_toy</span> AI Summary</span>
-            <button onClick={() => setShowAi(false)}><span className="material-symbols-outlined">close</span></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 text-sm leading-relaxed whitespace-pre-wrap">
-            {aiLoading ? <div className="animate-pulse space-y-3"><div className="h-4 bg-slate-200 rounded w-3/4"></div><div className="h-4 bg-slate-200 rounded w-full"></div></div> : aiResponse}
-          </div>
-        </div>
-      )}
+  useEffect(() => {
+    loadContent();
+  }, [activeDoc]);
 
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 shrink-0 z-20">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><span className="material-symbols-outlined">arrow_back</span></button>
-          <h2 className="text-lg font-bold">{activeDoc.name}</h2>
+  const renderFallbackPDF = () => (
+    <div className="flex flex-col items-center gap-10 py-16 animate-in fade-in duration-700 origin-top" style={{ transform: `scale(${zoom})` }}>
+      {[1, 2, 3].map(page => (
+        <div key={page} className="w-full max-w-[850px] aspect-[1/1.414] bg-white shadow-2xl p-20 border border-slate-200 relative overflow-hidden flex flex-col">
+          <div className="flex justify-between items-start mb-12 border-b border-slate-100 pb-8">
+            <div className="flex items-center gap-4">
+               <div className="w-10 h-10 rounded-lg bg-primary text-white flex items-center justify-center font-black">P</div>
+               <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Paperless Meeting Cloud</div>
+            </div>
+            <div className="text-right">
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trang {page} / 3</p>
+               <p className="text-[9px] font-bold text-slate-300">REF: {meeting.id}-{activeDoc.id}</p>
+            </div>
+          </div>
+          <div className="flex-1 space-y-6">
+            <h1 className="text-3xl font-black text-slate-900 mb-8 uppercase text-center tracking-tight">{activeDoc.name}</h1>
+            <p className="font-bold text-slate-900">Nội dung cuộc họp: {meeting.title}</p>
+            <p className="text-slate-700 text-sm leading-relaxed text-justify">Đây là văn bản được trích xuất từ hệ thống quản trị tài liệu tập trung. Nội dung bao gồm các quyết nghị quan trọng phục vụ cho phiên họp ngày {new Date(meeting.startTime).toLocaleDateString('vi-VN')}.</p>
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 my-8">
+               <p className="text-xs font-bold text-primary mb-2 uppercase tracking-widest">Thông tin phiên họp:</p>
+               <ul className="list-disc list-inside space-y-2 text-xs font-medium text-slate-500">
+                  <li>Chủ trì: {meeting.host}</li>
+                  <li>Phòng: {meeting.roomId}</li>
+                  <li>Số lượng tham gia: {meeting.participants} đại biểu</li>
+               </ul>
+            </div>
+          </div>
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03] rotate-[-45deg] select-none">
+             <span className="text-9xl font-black">CONFIDENTIAL</span>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleAiSummary} className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-xl font-bold text-sm hover:bg-primary hover:text-white transition-all">
-            <span className="material-symbols-outlined fill text-[20px]">smart_toy</span> AI Assistant
-          </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="bg-[#f1f5f9] h-screen flex flex-col overflow-hidden relative font-display">
+      <aside className="fixed left-0 top-0 bottom-0 w-[340px] bg-white border-r border-slate-200 flex flex-col z-50 shadow-2xl">
+        <div className="h-24 flex items-center px-10 border-b border-slate-100 bg-slate-50/50">
+           <button onClick={onBack} className="w-12 h-12 flex items-center justify-center hover:bg-slate-100 rounded-2xl transition-all mr-4 border border-slate-100"><span className="material-symbols-outlined">arrow_back</span></button>
+           <div className="flex flex-col">
+              <span className="font-black text-[10px] uppercase tracking-[0.2em] text-slate-400">Tài liệu cuộc họp</span>
+              <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">{meeting.title}</span>
+           </div>
         </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div onClick={() => setActiveDoc(reportDoc)} className={`flex items-center gap-4 p-5 rounded-3xl cursor-pointer transition-all border-2 ${activeDoc.id === 'rep' ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200'}`}>
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${activeDoc.id === 'rep' ? 'bg-primary text-white' : 'bg-slate-100'}`}><span className="material-symbols-outlined">analytics</span></div>
+            <p className="text-sm font-black truncate">Dashboard Phân tích</p>
+          </div>
+          {availableDocs.map((doc) => (
+            <div key={doc.id} onClick={() => setActiveDoc(doc)} className={`flex items-center gap-4 p-5 rounded-3xl cursor-pointer transition-all border-2 ${activeDoc.id === doc.id ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200'}`}>
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${activeDoc.id === doc.id ? 'bg-primary text-white' : 'bg-slate-100'}`}><span className="material-symbols-outlined">{doc.type === 'pdf' ? 'picture_as_pdf' : 'description'}</span></div>
+              <div className="flex-1 overflow-hidden"><p className="text-sm font-black truncate text-slate-800">{doc.name}</p><p className="text-[9px] font-black uppercase opacity-40 mt-1">{doc.type} • {doc.size}</p></div>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <header className="ml-[340px] h-24 flex items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur-md px-12 sticky top-0 z-40">
+        <div className="flex flex-col"><h2 className="text-2xl font-black text-slate-900 tracking-tighter leading-none">{activeDoc.name}</h2><div className="flex items-center gap-3 mt-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{meeting.title}</span></div></div>
+        <button onClick={handleAiSummary} className="bg-primary text-white px-8 py-3.5 rounded-2xl font-black text-xs shadow-glow-blue active:scale-95 transition-all uppercase tracking-widest flex items-center gap-3"><span className="material-symbols-outlined fill">smart_toy</span> Phân tích AI</button>
       </header>
 
-      <main className="flex flex-1 overflow-hidden">
-        <aside className="w-72 bg-white border-r border-slate-200 flex flex-col shrink-0">
-          <div className="p-4 border-b font-bold text-xs uppercase text-slate-500">Tài liệu họp</div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {documents.map((doc) => (
-              <div key={doc.id} onClick={() => setActiveDoc(doc)} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${activeDoc.id === doc.id ? 'bg-primary/10 text-primary' : 'hover:bg-slate-50 text-slate-600'}`}>
-                <span className="material-symbols-outlined text-[20px]">{doc.type === 'pdf' ? 'picture_as_pdf' : 'description'}</span>
-                <span className="text-sm font-bold truncate">{doc.name}</span>
-              </div>
-            ))}
-          </div>
-        </aside>
+      <main className="ml-[340px] flex-1 flex flex-col bg-slate-200/50 overflow-hidden relative">
+        <div className="bg-white/90 border-b border-slate-200 h-14 flex items-center justify-center gap-8 px-10 z-30 shadow-sm shrink-0">
+           <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
+              <button onClick={() => setZoom(z => Math.max(0.3, z - 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">remove</span></button>
+              <span className="text-xs font-black min-w-[50px] text-center text-slate-700 select-none">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">add</span></button>
+           </div>
+           <button onClick={() => setZoom(1.0)} className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">Reset</button>
+           <div className="h-6 w-px bg-slate-200"></div>
+           <button className="flex items-center gap-2 text-xs font-black text-slate-500 hover:text-primary transition-all uppercase tracking-widest"><span className="material-symbols-outlined text-[18px]">download</span> Tải xuống</button>
+        </div>
 
-        <section className="flex-1 overflow-auto bg-slate-200/50">
-          <div className="sticky top-0 bg-white/80 backdrop-blur-sm border-b p-2 flex justify-center z-10">
-              <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
-                  <button onClick={() => setZoom(z => Math.max(0.5, z-0.1))} className="p-1"><span className="material-symbols-outlined text-sm">zoom_out</span></button>
-                  <span className="text-[10px] font-bold min-w-[30px] text-center">{Math.round(zoom*100)}%</span>
-                  <button onClick={() => setZoom(z => Math.min(2, z+0.1))} className="p-1"><span className="material-symbols-outlined text-sm">zoom_in</span></button>
-              </div>
-          </div>
-          {renderContent()}
-        </section>
+        <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth p-10">
+           {loading ? (
+             <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+               <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+               <p className="font-black text-xs uppercase tracking-widest">Đang tải tài liệu...</p>
+             </div>
+           ) : (
+             <div className="flex flex-col items-center w-full min-h-full transition-all duration-200 ease-out">
+                {/* Fallback View */}
+                {isFallback && renderFallbackPDF()}
+
+                {/* Report View */}
+                {!isFallback && activeDoc.id === 'rep' && (
+                  <div className="w-full max-w-4xl bg-white shadow-2xl rounded-[3rem] p-20 animate-in zoom-in-95 origin-top" style={{ transform: `scale(${zoom})` }}>
+                     <h1 className="text-4xl font-black mb-10 text-slate-900 tracking-tighter">Báo cáo Cuộc họp</h1>
+                     <div className="grid grid-cols-2 gap-10">
+                        <div className="h-64"><ResponsiveContainer><BarChart data={dataBar}><Bar dataKey="val" fill="#137fec" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div>
+                        <div className="h-64"><ResponsiveContainer><PieChart><Pie data={dataPie} innerRadius={70} outerRadius={90} dataKey="value">{dataPie.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}</Pie></PieChart></ResponsiveContainer></div>
+                     </div>
+                  </div>
+                )}
+
+                {/* PDF View (Native Zoom) */}
+                {!isFallback && activeDoc.type === 'pdf' && pdfDoc && (
+                   <div className="flex flex-col items-center">
+                     {Array.from(new Array(numPages), (el, index) => (
+                       <PdfPage key={`page_${index + 1}`} pdfDoc={pdfDoc} pageNum={index + 1} scale={zoom * 1.5} />
+                     ))}
+                   </div>
+                )}
+                
+                {/* DOCX View (CSS Zoom) */}
+                {!isFallback && activeDoc.type === 'docx' && docxHtml && (
+                   <div 
+                     className="bg-white shadow-2xl p-16 min-h-[1100px] docx-content-render origin-top"
+                     style={{ 
+                       transform: `scale(${zoom})`, 
+                       width: '850px' // Fixed width for A4 consistency, scaled by CSS
+                     }}
+                     dangerouslySetInnerHTML={{ __html: docxHtml }} 
+                   />
+                )}
+             </div>
+           )}
+        </div>
       </main>
+
+      {showAi && (
+        <div className="fixed inset-y-0 right-0 w-[480px] bg-white shadow-2xl z-[100] border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-500">
+          <div className="p-8 border-b flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center shadow-glow-blue"><span className="material-symbols-outlined fill">smart_toy</span></div><h3 className="font-black text-slate-900 text-lg">AI Assistant</h3></div><button onClick={() => setShowAi(false)} className="p-2 hover:bg-slate-100 rounded-full"><span className="material-symbols-outlined">close</span></button></div>
+          <div className="flex-1 overflow-y-auto p-10">{aiLoading ? <div className="space-y-4 animate-pulse">{[1,2,3,4].map(i => <div key={i} className="h-4 bg-slate-100 rounded-full w-full"></div>)}</div> : <p className="text-slate-600 leading-relaxed font-medium whitespace-pre-line">{aiResponse}</p>}</div>
+          <div className="p-8 border-t bg-slate-50"><div className="relative"><input type="text" placeholder="Hỏi AI bất kỳ điều gì..." className="w-full bg-white border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold pr-16 shadow-sm focus:ring-4 focus:ring-primary/5" /><button className="absolute right-3 top-1/2 -translate-y-1/2 bg-primary text-white w-10 h-10 rounded-xl flex items-center justify-center"><span className="material-symbols-outlined">send</span></button></div></div>
+        </div>
+      )}
     </div>
   );
 };

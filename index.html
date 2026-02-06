@@ -15,13 +15,14 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
       rel="stylesheet"
     />
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries,typography"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
-      // Cấu hình worker cho pdf.js
-      if (window['pdfjs-dist/build/pdf']) {
-        window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      // Cấu hình PDF.js Global
+      const pdfjsLib = window['pdfjs-dist/build/pdf'];
+      if (pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       }
       
       tailwind.config = {
@@ -31,10 +32,14 @@
             colors: {
               primary: "#137fec",
               "primary-hover": "#0f6bd0",
-              "bg-main": "#f8fafc",
-              "bg-sidebar": "#ffffff",
-              "text-main": "#1e293b",
-              "text-secondary": "#64748b",
+              enterprise: {
+                blue: "#137fec",
+                purple: "#8b5cf6",
+                orange: "#f59e0b",
+                emerald: "#10b981",
+                rose: "#f43f5e",
+                indigo: "#6366f1"
+              }
             },
             fontFamily: {
               display: ["Manrope", "sans-serif"],
@@ -42,10 +47,37 @@
             },
             boxShadow: {
               soft: "0 4px 20px -2px rgba(0, 0, 0, 0.05)",
-              "soft-hover": "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-              glow: "0 0 15px rgba(19, 127, 236, 0.3)",
-              card: "0 2px 10px -2px rgba(0,0,0,0.05)",
+              "soft-hover": "0 15px 30px -5px rgba(0, 0, 0, 0.1)",
+              glow: "0 0 20px rgba(19, 127, 236, 0.15)",
+              'glow-blue': "0 10px 25px -5px rgba(19, 127, 236, 0.4)",
+              'glow-purple': "0 10px 25px -5px rgba(139, 92, 246, 0.4)",
+              'glow-orange': "0 10px 25px -5px rgba(245, 158, 11, 0.4)",
+              'glow-emerald': "0 10px 25px -5px rgba(16, 185, 129, 0.4)",
             },
+            animation: {
+              'fade-in-up': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'scale-in': 'scaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'shimmer': 'shimmer 2s linear infinite',
+              'pulse-soft': 'pulseSoft 3s ease-in-out infinite',
+            },
+            keyframes: {
+              fadeInUp: {
+                '0%': { opacity: '0', transform: 'translateY(20px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              scaleIn: {
+                '0%': { opacity: '0', transform: 'scale(0.95)' },
+                '100%': { opacity: '1', transform: 'scale(1)' },
+              },
+              shimmer: {
+                '0%': { backgroundPosition: '-200% 0' },
+                '100%': { backgroundPosition: '200% 0' },
+              },
+              pulseSoft: {
+                '0%, 100%': { opacity: '1' },
+                '50%': { opacity: '0.8' },
+              }
+            }
           },
         },
       };
@@ -57,68 +89,62 @@
       .material-symbols-outlined.fill {
         font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
       }
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+      .page-transition {
+        animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
       }
-      ::-webkit-scrollbar-track {
-        background: transparent;
+      .glass-card {
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.4);
       }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 3px;
+      .card-gradient-blue { background: linear-gradient(135deg, #137fec 0%, #3b82f6 100%); }
+      .card-gradient-purple { background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%); }
+      .card-gradient-orange { background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); }
+      .card-gradient-emerald { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); }
+
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+      /* Styles cho DOCX rendering */
+      .docx-content-render {
+        font-family: 'Times New Roman', serif;
       }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-      }
-      .docx-content {
-        font-family: 'Times New Roman', Times, serif;
-        line-height: 1.6;
-        color: #000;
-      }
-      .docx-content p { margin-bottom: 1em; }
-      .docx-content h1, .docx-content h2, .docx-content h3 {
-        font-family: 'Arial', sans-serif;
+      .docx-content-render h1, .docx-content-render h2, .docx-content-render h3 {
         color: #1a202c;
         margin-top: 1.5em;
         margin-bottom: 0.5em;
-        font-weight: bold;
       }
-      .docx-content h1 { font-size: 24px; }
-      .docx-content h2 { font-size: 20px; }
-      .docx-content h3 { font-size: 16px; }
-      .docx-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-      .docx-content td, .docx-content th { border: 1px solid #cbd5e1; padding: 8px; }
-      
-      /* PDF Custom Styles */
-      .pdf-canvas-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 20px;
-        padding: 20px;
+      .docx-content-render p {
+        margin-bottom: 1em;
+        line-height: 1.6;
+        color: #2d3748;
       }
-      .pdf-page-wrapper {
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        background: white;
-        border: 1px solid #e2e8f0;
+      .docx-content-render table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1.5em;
+      }
+      .docx-content-render table td, .docx-content-render table th {
+        border: 1px solid #cbd5e0;
+        padding: 8px 12px;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
-    "@google/genai": "https://esm.sh/@google/genai@^1.40.0"
-  }
-}
-</script>
-</head>
-  <body>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.4",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+        "react/": "https://esm.sh/react@^19.2.4/",
+        "recharts": "https://esm.sh/recharts@^3.7.0",
+        "vite": "https://esm.sh/vite@^7.3.1",
+        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
+        "@google/genai": "https://esm.sh/@google/genai@^1.40.0"
+      }
+    }
+    </script>
+  </head>
+  <body class="bg-[#f8fafc] overflow-hidden">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

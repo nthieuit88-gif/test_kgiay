@@ -1,125 +1,142 @@
-import React from 'react';
+
+import React, { useState } from 'react';
 
 interface LoginProps {
   onLogin: () => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin();
+    setIsSubmitting(true);
+    setTimeout(() => onLogin(), 1200);
   };
 
   return (
-    <div className="font-display bg-bg-page min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute inset-0 z-0">
-        <img
-          alt="Modern bright office background"
-          className="w-full h-full object-cover opacity-20 blur-sm scale-105 saturate-0"
-          src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2301"
-        />
-        <div className="absolute inset-0 bg-gradient-to-tr from-white/95 via-white/90 to-blue-50/60"></div>
-      </div>
-      <div className="relative z-10 w-full max-w-[420px]">
-        <div className="flex flex-col items-center justify-center mb-8">
-          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg shadow-blue-200 mb-5 transform transition hover:scale-105 duration-300">
-            <span className="material-symbols-outlined text-white text-[28px]">meeting_room</span>
-          </div>
-          <h1 className="text-2xl font-extrabold text-text-main tracking-tight text-center">E-Meeting Paperless</h1>
-          <p className="text-text-secondary text-sm mt-2 font-medium">Hệ thống phòng họp chuyên nghiệp</p>
+    <div className="font-display min-h-screen w-full flex overflow-hidden bg-white">
+      {/* Cột trái: Hình ảnh & Branding Enterprise */}
+      <div className="hidden lg:flex lg:w-[58%] relative bg-slate-900 overflow-hidden">
+        <div className="absolute inset-0 z-0 scale-105 animate-pulse-soft">
+          <img
+            alt="Office"
+            className="w-full h-full object-cover opacity-60 mix-blend-overlay"
+            src="https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&q=80&w=2301"
+          />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-slate-950/90"></div>
         </div>
-        <div className="bg-white/80 backdrop-blur-xl rounded-[24px] shadow-card border border-white/50 p-8 sm:p-10 relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent opacity-20"></div>
-          <div className="mb-8 text-center">
-            <h2 className="text-xl font-bold text-slate-800 mb-2">Đăng nhập hệ thống</h2>
-            <p className="text-slate-500 text-sm">Vui lòng nhập thông tin tài khoản doanh nghiệp</p>
+        
+        <div className="relative z-10 p-24 flex flex-col justify-between w-full">
+          <div className="flex items-center gap-5">
+            <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center text-white shadow-2xl rotate-3">
+              <span className="material-symbols-outlined text-[36px] fill">layers</span>
+            </div>
+            <div>
+              <h1 className="text-white text-3xl font-black tracking-tighter">PAPERLESS</h1>
+              <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.4em]">Intelligence Suite</p>
+            </div>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1" htmlFor="username">
-                Tên đăng nhập
-              </label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-500 transition-colors duration-200">
-                  <span className="material-symbols-outlined text-[20px]">person</span>
-                </div>
+
+          <div className="max-w-xl">
+            <h2 className="text-6xl font-black text-white leading-tight mb-8 animate-in slide-in-from-bottom-10 duration-1000">
+              Tương lai của <br/> 
+              <span className="text-primary-hover underline decoration-white/20 underline-offset-8">Quản trị hội họp</span>
+            </h2>
+            <p className="text-xl text-white/60 font-medium leading-relaxed mb-12">
+              Chuyển đổi hoàn toàn trải nghiệm họp doanh nghiệp với hệ thống Paperless thế hệ mới. Tiết kiệm tài nguyên, tăng cường hiệu quả và bảo mật tuyệt đối.
+            </p>
+            <div className="flex gap-10">
+               <div className="flex flex-col">
+                  <span className="text-white text-2xl font-black">94%</span>
+                  <span className="text-white/40 text-[10px] font-black uppercase tracking-widest mt-1">Tỉ lệ hài lòng</span>
+               </div>
+               <div className="w-px h-10 bg-white/10 self-center"></div>
+               <div className="flex flex-col">
+                  <span className="text-white text-2xl font-black">2.5K+</span>
+                  <span className="text-white/40 text-[10px] font-black uppercase tracking-widest mt-1">Hội nghị mỗi ngày</span>
+               </div>
+            </div>
+          </div>
+
+          <div className="text-white/20 text-[11px] font-black uppercase tracking-[0.5em]">
+            Enterprise Certified System • 2024
+          </div>
+        </div>
+      </div>
+
+      {/* Cột phải: Form Đăng nhập - Glassmorphism Area */}
+      <div className="flex-1 flex flex-col items-center justify-center p-10 lg:p-20 relative bg-slate-50/30">
+        {/* Background Decor cho phần đăng nhập */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+
+        <div className="w-full max-w-[420px] relative z-10 animate-in fade-in zoom-in-95 duration-700">
+          <div className="text-center mb-12">
+            <h3 className="text-4xl font-black text-slate-900 mb-3 tracking-tight">Xin chào!</h3>
+            <p className="text-slate-500 font-bold">Vui lòng nhập thông tin để truy cập hệ thống.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Tài khoản doanh nghiệp</label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">person</span>
                 <input
-                  className="block w-full h-[50px] rounded-xl border border-slate-200 bg-slate-50 px-3 pl-11 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:bg-white transition-all duration-200"
-                  id="username"
-                  placeholder="admin@paperless.com"
-                  defaultValue="admin@paperless.com"
                   required
-                  type="text"
+                  defaultValue="admin@paperless.com"
+                  className="w-full h-[64px] bg-white border-2 border-slate-100 rounded-2xl px-6 pl-14 text-[15px] font-bold text-slate-800 focus:border-primary focus:ring-8 focus:ring-primary/5 transition-all outline-none"
+                  placeholder="name@company.com"
+                  type="email"
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between ml-1">
-                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500" htmlFor="password">
-                  Mật khẩu
-                </label>
-                <a className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors" href="#">
-                  Quên mật khẩu?
-                </a>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center ml-1">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Mật khẩu truy cập</label>
+                <button type="button" className="text-xs font-black text-primary hover:underline uppercase tracking-tighter">Quên?</button>
               </div>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-500 transition-colors duration-200">
-                  <span className="material-symbols-outlined text-[20px]">lock</span>
-                </div>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">lock_person</span>
                 <input
-                  className="block w-full h-[50px] rounded-xl border border-slate-200 bg-slate-50 px-3 pl-11 pr-11 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:bg-white transition-all duration-200"
-                  id="password"
-                  placeholder="••••••••"
-                  defaultValue="password"
                   required
+                  defaultValue="password"
+                  className="w-full h-[64px] bg-white border-2 border-slate-100 rounded-2xl px-6 pl-14 text-[15px] font-bold text-slate-800 focus:border-primary focus:ring-8 focus:ring-primary/5 transition-all outline-none"
+                  placeholder="••••••••"
                   type="password"
                 />
-                <button
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[20px]">visibility</span>
-                </button>
+                <button type="button" className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><span className="material-symbols-outlined">visibility</span></button>
               </div>
             </div>
-            <div className="flex items-center pt-1">
-              <input
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-              />
-              <label className="ml-2.5 block text-sm font-medium text-slate-600 cursor-pointer select-none" htmlFor="remember-me">
-                Ghi nhớ đăng nhập
-              </label>
+
+            <div className="flex items-center gap-3 ml-1">
+              <input type="checkbox" id="rem" className="w-5 h-5 rounded-lg border-2 border-slate-200 text-primary focus:ring-primary/20 cursor-pointer" />
+              <label htmlFor="rem" className="text-sm font-bold text-slate-500 cursor-pointer select-none">Ghi nhớ đăng nhập</label>
             </div>
+
             <button
-              className="w-full flex justify-center items-center h-[52px] rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20 transition-all duration-200 shadow-lg shadow-blue-500/25 active:scale-[0.99] mt-2 group"
+              disabled={isSubmitting}
+              className="w-full h-[68px] bg-primary hover:bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-glow-blue active:scale-95 transition-all flex items-center justify-center gap-3 relative overflow-hidden group"
               type="submit"
             >
-              Đăng nhập hệ thống
-              <span className="material-symbols-outlined text-[18px] ml-2 group-hover:translate-x-1 transition-transform">arrow_forward</span>
+              {isSubmitting ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : (
+                <>
+                   Đăng nhập hệ thống
+                   <span className="material-symbols-outlined group-hover:translate-x-2 transition-transform">chevron_right</span>
+                </>
+              )}
             </button>
           </form>
-          <div className="mt-8 pt-6 border-t border-slate-100">
-            <div className="text-center">
-              <p className="text-xs text-slate-400 font-medium">
-                Cần hỗ trợ kỹ thuật?
-                <a className="text-blue-600 hover:text-blue-700 font-semibold ml-1 transition-colors" href="#">Liên hệ IT Support</a>
-              </p>
-              <div className="mt-5 flex justify-center items-center gap-3 text-[10px] text-slate-300 font-bold uppercase tracking-[0.2em] select-none">
-                <span>Secure</span>
-                <span className="w-1 h-1 rounded-full bg-slate-200"></span>
-                <span>Paperless</span>
-                <span className="w-1 h-1 rounded-full bg-slate-200"></span>
-                <span>Pro</span>
-              </div>
-            </div>
+
+          <div className="mt-16 text-center space-y-6 pt-10 border-t border-slate-100">
+             <button className="flex items-center justify-center gap-3 w-full h-[60px] bg-white border-2 border-slate-100 rounded-2xl font-bold text-slate-700 hover:bg-slate-50 transition-all">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="google" />
+                Dùng Microsoft Azure / Google SSO
+             </button>
+             <p className="text-xs font-bold text-slate-400">Trung tâm hỗ trợ: <span className="text-primary cursor-pointer hover:underline">1900 6868</span></p>
           </div>
         </div>
-        <p className="text-center text-xs font-medium text-slate-400 mt-8">
-          © 2024 Enterprise Meeting System v2.1.0
-        </p>
       </div>
     </div>
   );

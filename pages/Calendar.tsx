@@ -21,6 +21,7 @@ const Calendar: React.FC<CalendarProps> = ({ meetings, rooms, onAddMeeting, onUp
     endTime: '10:00',
     participants: 10,
     roomId: rooms[0]?.id || 'room-1', // Sử dụng phòng đầu tiên làm mặc định
+    color: 'blue' as 'blue' | 'purple' | 'orange' | 'emerald',
     files: [] as File[]
   });
 
@@ -46,6 +47,7 @@ const Calendar: React.FC<CalendarProps> = ({ meetings, rooms, onAddMeeting, onUp
       endTime: '10:00',
       participants: 10,
       roomId: rooms[0]?.id || 'room-1',
+      color: 'blue',
       files: []
     });
     setShowBookingModal(true);
@@ -86,7 +88,7 @@ const Calendar: React.FC<CalendarProps> = ({ meetings, rooms, onAddMeeting, onUp
       host: 'Nguyễn Văn A (Tôi)',
       participants: bookingForm.participants,
       status: 'pending',
-      color: 'blue',
+      color: bookingForm.color,
       documents: attachedDocs
     };
 
@@ -245,6 +247,29 @@ const Calendar: React.FC<CalendarProps> = ({ meetings, rooms, onAddMeeting, onUp
                   <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Kết thúc</label>
                   <input type="time" required value={bookingForm.endTime} onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
                 </div>
+              </div>
+
+              {/* Color Picker Section */}
+              <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Nhãn màu ghi chú</label>
+                  <div className="flex gap-4">
+                    {[
+                      { id: 'blue', bg: 'bg-blue-500', label: 'Xanh dương' },
+                      { id: 'purple', bg: 'bg-purple-500', label: 'Tím' },
+                      { id: 'orange', bg: 'bg-orange-500', label: 'Cam' },
+                      { id: 'emerald', bg: 'bg-emerald-500', label: 'Lục' }
+                    ].map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setBookingForm({...bookingForm, color: c.id as any})}
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${bookingForm.color === c.id ? 'ring-2 ring-offset-2 ring-slate-300 scale-110 shadow-lg' : 'hover:scale-105 opacity-70 hover:opacity-100'} ${c.bg}`}
+                        title={c.label}
+                      >
+                        {bookingForm.color === c.id && <span className="material-symbols-outlined text-white text-xl">check</span>}
+                      </button>
+                    ))}
+                  </div>
               </div>
 
               <div className="space-y-3 pt-4 border-t border-slate-100">

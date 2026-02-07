@@ -44,6 +44,19 @@ const INITIAL_ROOMS: Room[] = [
   }
 ];
 
+// Helper để tạo ngày tương đối so với hôm nay
+const getTodayAt = (h: number) => {
+  const d = new Date();
+  d.setHours(h, 0, 0, 0);
+  return d.toISOString();
+}
+const getDayFromNowAt = (days: number, h: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(h, 0, 0, 0);
+  return d.toISOString();
+}
+
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>(Page.LOGIN);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
@@ -56,13 +69,13 @@ const App: React.FC = () => {
     { id: 'd3', name: 'Kế hoạch nhân sự 2024.pdf', size: '856KB', type: 'pdf' }
   ]);
 
-  // Danh sách cuộc họp đồng bộ
+  // Danh sách cuộc họp đồng bộ với thời gian thực
   const [meetings, setMeetings] = useState<Meeting[]>([
     { 
       id: '1', 
       title: 'Họp Giao Ban Tuần', 
-      startTime: '2023-10-29T09:00:00', 
-      endTime: '2023-10-29T11:00:00', 
+      startTime: getTodayAt(9), 
+      endTime: getTodayAt(11), 
       roomId: 'room-1', 
       host: 'Nguyễn Văn A', 
       participants: 12, 
@@ -73,14 +86,38 @@ const App: React.FC = () => {
     { 
       id: '2', 
       title: 'Review Thiết Kế UI/UX', 
-      startTime: '2023-10-29T14:00:00', 
-      endTime: '2023-10-29T15:30:00', 
+      startTime: getTodayAt(14), 
+      endTime: getTodayAt(15), 
       roomId: 'room-2', 
       host: 'Phạm Minh Tuấn', 
       participants: 8, 
       status: 'approved', 
       color: 'purple',
       documents: [allDocuments[2]]
+    },
+    { 
+      id: '3', 
+      title: 'Workshop AI Enterprise', 
+      startTime: getDayFromNowAt(1, 9), 
+      endTime: getDayFromNowAt(1, 12), 
+      roomId: 'room-3', 
+      host: 'Dr. Strange', 
+      participants: 50, 
+      status: 'approved', 
+      color: 'emerald',
+      documents: []
+    },
+    { 
+      id: '4', 
+      title: 'Họp Khẩn Cấp BGD', 
+      startTime: getDayFromNowAt(2, 16), 
+      endTime: getDayFromNowAt(2, 17), 
+      roomId: 'room-2', 
+      host: 'CEO', 
+      participants: 5, 
+      status: 'approved', 
+      color: 'orange',
+      documents: []
     }
   ]);
 

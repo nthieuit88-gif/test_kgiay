@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
-import { Meeting } from '../types';
+import { Meeting, MeetingDocument } from '../types';
 
 const mammoth = (window as any).mammoth;
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
@@ -40,6 +41,7 @@ const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pd
 
 interface MeetingDetailProps {
   meeting: Meeting;
+  onUpdateMeeting: (meeting: Meeting) => void;
   onBack: () => void;
 }
 
@@ -51,7 +53,7 @@ const dataPie = [
 ];
 const COLORS = ['#137fec', '#e2e8f0'];
 
-const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onBack }) => {
+const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting, onBack }) => {
   // Lấy tài liệu đầu tiên làm mặc định, nếu không có thì dùng trang báo cáo
   const availableDocs = meeting.documents || [];
   const reportDoc: any = { id: 'rep', name: 'Báo cáo phân tích hệ thống', type: 'report', size: 'N/A' };
@@ -65,9 +67,79 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onBack }) => {
   const [aiResponse, setAiResponse] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
   
+  // States cho việc quản lý tài liệu
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  
   // PDF State
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
+
+  // --- Handlers cho việc Quản lý Tài liệu ---
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      const newFiles = Array.from(event.target.files).map((item) => {
+         const file = item as File;
+         return {
+            id: Math.random().toString(36).substr(2, 9),
+            name: file.name,
+            size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+            type: file.name.split('.').pop()?.toLowerCase() || 'file',
+            file: file,
+            url: URL.createObjectURL(file)
+         };
+      });
+
+      const updatedMeeting = {
+         ...meeting,
+         documents: [...(meeting.documents || []), ...newFiles]
+      };
+      onUpdateMeeting(updatedMeeting);
+      
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteDoc = (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation();
+    if (window.confirm('Bạn có chắc chắn muốn xóa tài liệu này khỏi cuộc họp?')) {
+        const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
+        const updatedMeeting = { ...meeting, documents: updatedDocs };
+        onUpdateMeeting(updatedMeeting);
+
+        // Nếu đang xem tài liệu bị xóa, quay về báo cáo
+        if (activeDoc.id === docId) {
+            setActiveDoc(reportDoc);
+        }
+    }
+  };
+
+  const startEdit = (e: React.MouseEvent, doc: MeetingDocument) => {
+    e.stopPropagation();
+    setEditingDocId(doc.id);
+    setEditName(doc.name);
+  };
+
+  const saveEdit = (e: React.MouseEvent | React.FormEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!editingDocId) return;
+
+    const updatedDocs = (meeting.documents || []).map(d =>
+        d.id === editingDocId ? { ...d, name: editName } : d
+    );
+    onUpdateMeeting({ ...meeting, documents: updatedDocs });
+    
+    // Cập nhật tên nếu đang xem tài liệu đó
+    if (activeDoc.id === editingDocId) {
+        setActiveDoc({ ...activeDoc, name: editName });
+    }
+
+    setEditingDocId(null);
+  };
+  // ------------------------------------------
 
   const handleAiSummary = async () => {
     setAiLoading(true);
@@ -180,31 +252,74 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onBack }) => {
 
   return (
     <div className="bg-[#f1f5f9] h-screen flex flex-col overflow-hidden relative font-display">
+      <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.xlsx" multiple />
+      
       <aside className="fixed left-0 top-0 bottom-0 w-[340px] bg-white border-r border-slate-200 flex flex-col z-50 shadow-2xl">
-        <div className="h-24 flex items-center px-10 border-b border-slate-100 bg-slate-50/50">
-           <button onClick={onBack} className="w-12 h-12 flex items-center justify-center hover:bg-slate-100 rounded-2xl transition-all mr-4 border border-slate-100"><span className="material-symbols-outlined">arrow_back</span></button>
-           <div className="flex flex-col">
-              <span className="font-black text-[10px] uppercase tracking-[0.2em] text-slate-400">Tài liệu cuộc họp</span>
-              <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">{meeting.title}</span>
+        <div className="h-24 flex items-center justify-between px-6 border-b border-slate-100 bg-slate-50/50">
+           <div className="flex items-center gap-3 overflow-hidden">
+             <button onClick={onBack} className="w-10 h-10 flex-shrink-0 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-all border border-slate-100"><span className="material-symbols-outlined">arrow_back</span></button>
+             <div className="flex flex-col overflow-hidden">
+                <span className="font-black text-[10px] uppercase tracking-[0.2em] text-slate-400 truncate">Tài liệu cuộc họp</span>
+                <span className="font-bold text-slate-800 text-xs truncate" title={meeting.title}>{meeting.title}</span>
+             </div>
            </div>
+           <button onClick={() => fileInputRef.current?.click()} className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl shadow-glow-blue hover:bg-blue-600 transition-all active:scale-95" title="Thêm tài liệu">
+              <span className="material-symbols-outlined text-[20px]">add</span>
+           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <div onClick={() => setActiveDoc(reportDoc)} className={`flex items-center gap-4 p-5 rounded-3xl cursor-pointer transition-all border-2 ${activeDoc.id === 'rep' ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200'}`}>
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${activeDoc.id === 'rep' ? 'bg-primary text-white' : 'bg-slate-100'}`}><span className="material-symbols-outlined">analytics</span></div>
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div onClick={() => setActiveDoc(reportDoc)} className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all border ${activeDoc.id === 'rep' ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200'}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${activeDoc.id === 'rep' ? 'bg-primary text-white' : 'bg-slate-100'}`}><span className="material-symbols-outlined">analytics</span></div>
             <p className="text-sm font-black truncate">Dashboard Phân tích</p>
           </div>
+
           {availableDocs.map((doc) => (
-            <div key={doc.id} onClick={() => setActiveDoc(doc)} className={`flex items-center gap-4 p-5 rounded-3xl cursor-pointer transition-all border-2 ${activeDoc.id === doc.id ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200'}`}>
-              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${activeDoc.id === doc.id ? 'bg-primary text-white' : 'bg-slate-100'}`}><span className="material-symbols-outlined">{doc.type === 'pdf' ? 'picture_as_pdf' : 'description'}</span></div>
-              <div className="flex-1 overflow-hidden"><p className="text-sm font-black truncate text-slate-800">{doc.name}</p><p className="text-[9px] font-black uppercase opacity-40 mt-1">{doc.type} • {doc.size}</p></div>
+            <div 
+              key={doc.id} 
+              onClick={() => setActiveDoc(doc)} 
+              className={`group relative flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all border ${activeDoc.id === doc.id ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200 hover:shadow-sm'}`}
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${activeDoc.id === doc.id ? 'bg-primary text-white' : 'bg-slate-100'}`}>
+                <span className="material-symbols-outlined">{doc.type === 'pdf' ? 'picture_as_pdf' : 'description'}</span>
+              </div>
+              
+              <div className="flex-1 overflow-hidden min-w-0">
+                {editingDocId === doc.id ? (
+                  <form onSubmit={saveEdit} onClick={e => e.stopPropagation()} className="flex items-center gap-2">
+                    <input 
+                      autoFocus
+                      className="w-full text-xs font-bold bg-white border border-primary rounded px-2 py-1 outline-none text-slate-900"
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      onBlur={saveEdit}
+                    />
+                  </form>
+                ) : (
+                  <>
+                    <p className="text-sm font-black truncate text-slate-800">{doc.name}</p>
+                    <p className="text-[9px] font-black uppercase opacity-40 mt-1">{doc.type} • {doc.size}</p>
+                  </>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className={`flex items-center gap-1 ${editingDocId === doc.id ? 'hidden' : 'opacity-0 group-hover:opacity-100'} transition-opacity absolute right-2 bg-white/90 p-1 rounded-lg shadow-sm border border-slate-100`}>
+                <button onClick={(e) => startEdit(e, doc)} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-primary transition-colors" title="Đổi tên">
+                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                </button>
+                <button onClick={(e) => handleDeleteDoc(e, doc.id)} className="p-1.5 hover:bg-rose-50 rounded-md text-slate-400 hover:text-rose-500 transition-colors" title="Xóa">
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </aside>
 
       <header className="ml-[340px] h-24 flex items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur-md px-12 sticky top-0 z-40">
-        <div className="flex flex-col"><h2 className="text-2xl font-black text-slate-900 tracking-tighter leading-none">{activeDoc.name}</h2><div className="flex items-center gap-3 mt-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{meeting.title}</span></div></div>
-        <button onClick={handleAiSummary} className="bg-primary text-white px-8 py-3.5 rounded-2xl font-black text-xs shadow-glow-blue active:scale-95 transition-all uppercase tracking-widest flex items-center gap-3"><span className="material-symbols-outlined fill">smart_toy</span> Phân tích AI</button>
+        <div className="flex flex-col max-w-2xl"><h2 className="text-2xl font-black text-slate-900 tracking-tighter leading-none truncate" title={activeDoc.name}>{activeDoc.name}</h2><div className="flex items-center gap-3 mt-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{meeting.title}</span></div></div>
+        <button onClick={handleAiSummary} className="bg-primary text-white px-8 py-3.5 rounded-2xl font-black text-xs shadow-glow-blue active:scale-95 transition-all uppercase tracking-widest flex items-center gap-3 shrink-0"><span className="material-symbols-outlined fill">smart_toy</span> Phân tích AI</button>
       </header>
 
       <main className="ml-[340px] flex-1 flex flex-col bg-slate-200/50 overflow-hidden relative">

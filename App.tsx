@@ -131,6 +131,10 @@ const App: React.FC = () => {
 
   const updateMeeting = (updatedMeeting: Meeting) => {
     setMeetings(prev => prev.map(m => m.id === updatedMeeting.id ? updatedMeeting : m));
+    // Cập nhật lại selectedMeeting nếu đang xem chi tiết cuộc họp đó
+    if (selectedMeeting && selectedMeeting.id === updatedMeeting.id) {
+      setSelectedMeeting(updatedMeeting);
+    }
   };
 
   const handleViewMeeting = (meeting: Meeting) => {
@@ -193,6 +197,7 @@ const App: React.FC = () => {
     return (
       <MeetingDetail 
         meeting={selectedMeeting} 
+        onUpdateMeeting={updateMeeting}
         onBack={() => setCurrentPage(Page.DASHBOARD)} 
       />
     );

@@ -5,12 +5,12 @@ import { GoogleGenAI } from "@google/genai";
 import { Meeting, MeetingDocument } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
-const mammoth = (window as any).mammoth;
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
 
-// PDF Page Component for rendering individual pages
+// PDF Page Component: Render từng trang PDF
 const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pdfDoc, pageNum, scale }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isRendered, setIsRendered] = useState(false);
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
@@ -19,6 +19,7 @@ const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pd
 
     pdfDoc.getPage(pageNum).then((page: any) => {
       if (isCancelled) return;
+      
       const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -31,13 +32,26 @@ const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pd
         canvasContext: context,
         viewport: viewport
       };
-      page.render(renderContext);
+      
+      const renderTask = page.render(renderContext);
+      renderTask.promise.then(() => {
+          if (!isCancelled) setIsRendered(true);
+      });
     });
 
     return () => { isCancelled = true; };
   }, [pdfDoc, pageNum, scale]);
 
-  return <canvas ref={canvasRef} className="bg-white w-full h-full object-contain" />;
+  return (
+    <div className="relative bg-white shadow-md mb-8 mx-auto transition-shadow hover:shadow-xl">
+      <canvas ref={canvasRef} className="block mx-auto" />
+      {!isRendered && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-50">
+          <span className="material-symbols-outlined animate-spin text-slate-300">progress_activity</span>
+        </div>
+      )}
+    </div>
+  );
 };
 
 interface MeetingDetailProps {
@@ -59,17 +73,12 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const reportDoc: any = { id: 'rep', name: 'Báo cáo phân tích hệ thống', type: 'report', size: 'N/A' };
   
   const [activeDoc, setActiveDoc] = useState<any>(availableDocs.length > 0 ? availableDocs[0] : reportDoc);
-  const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isFallback, setIsFallback] = useState(false);
   const [zoom, setZoom] = useState(1.0);
   const [showAi, setShowAi] = useState(false);
   const [aiResponse, setAiResponse] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
   
-  // State quản lý lật trang
-  const [currentPage, setCurrentPage] = useState(0);
-
   // States cho việc quản lý tài liệu
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
@@ -79,26 +88,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   // PDF State
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') nextPage();
-      if (e.key === 'ArrowLeft') prevPage();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [numPages, currentPage]);
-
-  const nextPage = () => {
-    if (currentPage < numPages - 1) setCurrentPage(p => p + 1);
-    // Đối với fallback có 3 trang
-    if (isFallback && currentPage < 2) setCurrentPage(p => p + 1);
-  };
-
-  const prevPage = () => {
-    if (currentPage > 0) setCurrentPage(p => p - 1);
-  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -113,8 +102,8 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     const newDocs: MeetingDocument[] = [];
 
     try {
-        // 0. Đồng bộ Meeting hiện tại lên DB trước để đảm bảo khóa ngoại (Foreign Key) tồn tại
-        const { error: syncError } = await supabase
+        // Đồng bộ Meeting hiện tại lên DB
+        await supabase
           .from('meetings')
           .upsert({
             id: meeting.id,
@@ -128,12 +117,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
             color: meeting.color
           });
 
-        if (syncError) {
-           console.warn("Lỗi đồng bộ meeting:", syncError.message);
-        }
-
         for (const file of Array.from(files) as File[]) {
-            // 1. Upload file lên Supabase Storage
             const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
             const fileName = `${Date.now()}-${sanitizedFileName}`;
 
@@ -147,12 +131,11 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
             if (uploadError) {
                 console.error("Upload Storage error:", uploadError);
                 if (uploadError.message.includes('row-level security') || uploadError.message.includes('policy')) {
-                    alert(`Lỗi quyền truy cập (RLS) khi upload ${file.name}.\nVui lòng chạy script SQL cấu hình Storage trong Supabase SQL Editor.`);
+                    alert(`Lỗi quyền truy cập (RLS) khi upload ${file.name}.`);
                 }
                 continue;
             }
 
-            // 2. Lấy Public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('files')
                 .getPublicUrl(uploadData.path);
@@ -160,7 +143,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
             const fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
             const fileType = file.name.split('.').pop()?.toLowerCase() || 'file';
 
-            // 3. Lưu vào Database kèm meeting_id
             const { data: insertData, error: insertError } = await supabase
                 .from('documents')
                 .insert([{
@@ -168,13 +150,12 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                     size: fileSize,
                     type: fileType,
                     url: publicUrl,
-                    meeting_id: meeting.id // Liên kết với cuộc họp
+                    meeting_id: meeting.id
                 }])
                 .select()
                 .single();
 
             if (insertError) {
-                console.error("DB Insert Document error:", insertError.message);
                 alert(`Không thể lưu thông tin file ${file.name} vào database: ${insertError.message}`);
             } else if (insertData) {
                 newDocs.push({
@@ -194,7 +175,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                 documents: [...(meeting.documents || []), ...newDocs]
             };
             onUpdateMeeting(updatedMeeting);
-            // Tự động mở tài liệu vừa tải lên đầu tiên
             setActiveDoc(newDocs[0]);
         }
 
@@ -211,7 +191,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     e.stopPropagation();
     if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này khỏi cuộc họp?')) return;
 
-    // 1. Xóa khỏi Database Supabase
     const { error } = await supabase
         .from('documents')
         .delete()
@@ -222,7 +201,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
         return;
     }
 
-    // 2. Cập nhật State Local
     const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
     const updatedMeeting = { ...meeting, documents: updatedDocs };
     onUpdateMeeting(updatedMeeting);
@@ -269,32 +247,22 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const loadContent = async () => {
     setPdfDoc(null);
     setNumPages(0);
-    setDocxHtml(null);
     setLoading(true);
-    setIsFallback(false);
     setZoom(1.0);
-    setCurrentPage(0); // Reset về trang đầu khi đổi file
 
     if (activeDoc.type === 'report') {
-      setIsFallback(false);
       setLoading(false);
       return;
     }
 
+    // Nếu là file Office (docx, xlsx, pptx) -> Sẽ dùng Google Viewer, không cần load buffer
+    if (['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(activeDoc.type)) {
+       setLoading(false);
+       return;
+    }
+
     if (activeDoc.url) {
-      if (activeDoc.type === 'docx') {
-        try {
-          const response = await fetch(activeDoc.url);
-          const arrayBuffer = await response.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-          setDocxHtml(result.value);
-          setLoading(false);
-        } catch (error) {
-          console.error("Lỗi đọc file docx:", error);
-          setIsFallback(true);
-          setLoading(false);
-        }
-      } else if (activeDoc.type === 'pdf') {
+       if (activeDoc.type === 'pdf') {
         try {
           const loadingTask = pdfjsLib.getDocument(activeDoc.url);
           const pdf = await loadingTask.promise;
@@ -303,18 +271,13 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
           setLoading(false);
         } catch (error) {
            console.error("Error loading PDF", error);
-           setIsFallback(true);
            setLoading(false);
         }
       } else {
         setLoading(false);
       }
     } else {
-      setTimeout(() => {
-        setIsFallback(true);
-        setLoading(false);
-        setNumPages(3); // Giả lập 3 trang cho fallback
-      }, 600);
+      setLoading(false);
     }
   };
 
@@ -322,87 +285,16 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     loadContent();
   }, [activeDoc]);
 
-  // Hiển thị Fallback 3D Flip
-  const renderFallbackPDF = () => (
-    <div className="book-perspective relative w-[650px] h-[920px] shadow-2xl mt-8 transition-transform duration-500 origin-top" style={{ transform: `scale(${zoom})` }}>
-       {[0, 1, 2].map((pageIndex) => (
-          <div 
-            key={pageIndex} 
-            className={`book-page absolute inset-0 bg-white border border-slate-200 flex flex-col p-16 overflow-hidden shadow-md ${pageIndex < currentPage ? 'flipped' : ''}`}
-            style={{ zIndex: 3 - pageIndex }}
-          >
-              <div className="flex justify-between items-start mb-10 border-b border-slate-100 pb-8">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary text-white flex items-center justify-center font-black">P</div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Paperless Meeting Cloud</div>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trang {pageIndex + 1} / 3</p>
-                  <p className="text-[9px] font-bold text-slate-300">REF: {meeting.id}-{activeDoc.id}</p>
-                </div>
-              </div>
-
-              {pageIndex === 0 && (
-                <div className="flex-1 space-y-6 animate-fade-in-up">
-                  <h1 className="text-4xl font-black text-slate-900 mb-8 uppercase text-center tracking-tight leading-tight">{activeDoc.name}</h1>
-                  <p className="font-bold text-slate-900 text-center text-lg">Nội dung cuộc họp: {meeting.title}</p>
-                  <div className="flex justify-center my-12">
-                     <div className="w-32 h-1 bg-primary/20 rounded-full"></div>
-                  </div>
-                  <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100">
-                    <p className="text-xs font-bold text-primary mb-4 uppercase tracking-widest text-center">Thông tin xác thực</p>
-                    <div className="flex justify-between text-sm font-medium text-slate-600 px-4">
-                        <span>Chủ trì:</span>
-                        <span className="font-bold text-slate-900">{meeting.host}</span>
-                    </div>
-                    <div className="flex justify-between text-sm font-medium text-slate-600 px-4 mt-2">
-                        <span>Phòng họp:</span>
-                        <span className="font-bold text-slate-900">{meeting.roomId}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {pageIndex === 1 && (
-                <div className="flex-1 space-y-6 text-justify leading-loose text-slate-700 font-medium">
-                   <h3 className="text-xl font-bold text-slate-900 mb-4">I. Tổng quan vấn đề</h3>
-                   <p>Theo báo cáo đánh giá tác động kinh tế quý vừa qua, chúng ta nhận thấy sự tăng trưởng mạnh mẽ trong lĩnh vực chuyển đổi số. Tuy nhiên, các thách thức về bảo mật thông tin và quản lý tài nguyên vẫn cần được xem xét một cách nghiêm túc.</p>
-                   <p>Hệ thống Paperless Meeting được triển khai nhằm giải quyết các vấn đề tồn đọng trong quy trình tổ chức họp truyền thống, giúp tiết kiệm thời gian và chi phí in ấn.</p>
-                   <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100 mt-6">
-                      <p className="text-blue-800 italic font-serif">"Chuyển đổi số không chỉ là công nghệ, mà là sự thay đổi về tư duy quản trị."</p>
-                   </div>
-                </div>
-              )}
-
-              {pageIndex === 2 && (
-                <div className="flex-1 space-y-6">
-                   <h3 className="text-xl font-bold text-slate-900 mb-4">II. Kết luận và Chỉ đạo</h3>
-                   <ul className="list-decimal list-inside space-y-4 text-slate-700 font-medium">
-                      <li>Thống nhất phương án triển khai giai đoạn 2 của dự án.</li>
-                      <li>Yêu cầu các bộ phận liên quan hoàn tất báo cáo trước ngày 30 hàng tháng.</li>
-                      <li>Phê duyệt ngân sách bổ sung cho việc nâng cấp hạ tầng mạng Wifi 6 tại khu vực phòng họp VIP.</li>
-                   </ul>
-                   <div className="mt-20 flex flex-col items-end">
-                      <p className="text-sm font-bold text-slate-400 mb-4">Người phê duyệt</p>
-                      <div className="w-40 h-20 border-b-2 border-slate-200 mb-2"></div>
-                      <p className="font-bold text-slate-900">{meeting.host}</p>
-                   </div>
-                </div>
-              )}
-
-              <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03] rotate-[-45deg] select-none z-0">
-                <span className="text-8xl font-black">CONFIDENTIAL</span>
-              </div>
-          </div>
-       ))}
-    </div>
-  );
+  // Kiểm tra loại file để render
+  const isOfficeFile = ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(activeDoc.type);
+  const isPdf = activeDoc.type === 'pdf';
+  const isReport = activeDoc.id === 'rep';
 
   return (
     <div className="bg-[#f1f5f9] h-screen flex flex-col overflow-hidden relative font-display">
       <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.xlsx" multiple />
       
-      {/* Sidebar (Giữ nguyên) */}
+      {/* Sidebar */}
       <aside className="fixed left-0 top-0 bottom-0 w-[340px] bg-white border-r border-slate-200 flex flex-col z-50 shadow-2xl">
         <div className="h-24 flex items-center justify-between px-6 border-b border-slate-100 bg-slate-50/50">
            <div className="flex items-center gap-3 overflow-hidden">
@@ -465,65 +357,47 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
         <button onClick={handleAiSummary} className="bg-primary text-white px-8 py-3.5 rounded-2xl font-black text-xs shadow-glow-blue active:scale-95 transition-all uppercase tracking-widest flex items-center gap-3 shrink-0"><span className="material-symbols-outlined fill">smart_toy</span> Phân tích AI</button>
       </header>
 
-      <main className="ml-[340px] flex-1 flex flex-col bg-slate-200/50 overflow-hidden relative">
-        {/* Bottom Toolbar - Updated with Pagination Info Only */}
+      <main className="ml-[340px] flex-1 flex flex-col bg-slate-300 overflow-hidden relative">
+        {/* Bottom Toolbar */}
         <div className="bg-white/90 border-b border-slate-200 h-16 flex items-center justify-between px-8 z-30 shadow-sm shrink-0 relative">
-           {/* Zoom Controls */}
            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
-                  <button onClick={() => setZoom(z => Math.max(0.3, z - 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">remove</span></button>
-                  <span className="text-xs font-black min-w-[50px] text-center text-slate-700 select-none">{Math.round(zoom * 100)}%</span>
-                  <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">add</span></button>
-              </div>
-              <button onClick={() => setZoom(1.0)} className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">Reset</button>
+              {isPdf && (
+                <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
+                    <button onClick={() => setZoom(z => Math.max(0.5, z - 0.2))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">remove</span></button>
+                    <span className="text-xs font-black min-w-[50px] text-center text-slate-700 select-none">{Math.round(zoom * 100)}%</span>
+                    <button onClick={() => setZoom(z => Math.min(2.5, z + 0.2))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">add</span></button>
+                </div>
+              )}
+              {isPdf && <button onClick={() => setZoom(1.0)} className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">Vừa màn hình</button>}
            </div>
 
-           {/* Pagination Info - Only for PDF or Fallback */}
-           {(activeDoc.type === 'pdf' || isFallback) && (
+           {/* Page Count Info */}
+           {isPdf && pdfDoc && (
               <div className="flex flex-col items-center absolute left-1/2 -translate-x-1/2">
-                  <span className="text-sm font-black text-slate-800">Trang {currentPage + 1}</span>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">/ {numPages || '...'}</span>
+                  <span className="text-sm font-black text-slate-800">Tài liệu gốc</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{numPages} Trang</span>
               </div>
            )}
 
-           <button className="flex items-center gap-2 text-xs font-black text-slate-500 hover:text-primary transition-all uppercase tracking-widest"><span className="material-symbols-outlined text-[18px]">download</span> Tải xuống</button>
+           <button className="flex items-center gap-2 text-xs font-black text-slate-500 hover:text-primary transition-all uppercase tracking-widest">
+            <a href={activeDoc.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">download</span> Tải xuống
+            </a>
+           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden relative flex justify-center bg-slate-200/50">
-           {/* Floating Navigation Buttons */}
-           {!loading && (activeDoc.type === 'pdf' || isFallback) && (
-             <>
-               <button 
-                 onClick={prevPage} 
-                 disabled={currentPage === 0}
-                 className="absolute left-10 top-1/2 -translate-y-1/2 z-40 w-16 h-16 rounded-full bg-white/80 backdrop-blur-md border border-white/50 shadow-2xl text-slate-600 flex items-center justify-center hover:bg-primary hover:text-white hover:scale-110 transition-all disabled:opacity-0 disabled:pointer-events-none group active:scale-95"
-               >
-                 <span className="material-symbols-outlined text-4xl group-hover:-translate-x-1 transition-transform">chevron_left</span>
-               </button>
-
-               <button 
-                 onClick={nextPage} 
-                 disabled={currentPage >= (numPages - 1)}
-                 className="absolute right-10 top-1/2 -translate-y-1/2 z-40 w-16 h-16 rounded-full bg-white/80 backdrop-blur-md border border-white/50 shadow-2xl text-slate-600 flex items-center justify-center hover:bg-primary hover:text-white hover:scale-110 transition-all disabled:opacity-0 disabled:pointer-events-none group active:scale-95"
-               >
-                 <span className="material-symbols-outlined text-4xl group-hover:translate-x-1 transition-transform">chevron_right</span>
-               </button>
-             </>
-           )}
-
+        <div className="flex-1 overflow-hidden relative bg-slate-200/50">
            {loading ? (
              <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
                <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
                <p className="font-black text-xs uppercase tracking-widest">Đang tải tài liệu...</p>
              </div>
            ) : (
-             <div className="w-full h-full flex items-start justify-center overflow-y-auto custom-scrollbar pt-8 pb-20">
-                {/* Fallback View */}
-                {isFallback && renderFallbackPDF()}
-
-                {/* Report View - Giữ nguyên không lật trang */}
-                {!isFallback && activeDoc.id === 'rep' && (
-                  <div className="w-full max-w-4xl bg-white shadow-2xl rounded-[3rem] p-20 animate-in zoom-in-95 origin-top mt-8" style={{ transform: `scale(${zoom})` }}>
+             <div className="w-full h-full overflow-y-auto custom-scrollbar bg-slate-300 p-8 text-center">
+                
+                {/* 1. REPORT VIEW */}
+                {isReport && (
+                  <div className="w-full max-w-4xl mx-auto bg-white shadow-2xl rounded-[3rem] p-20 animate-in zoom-in-95 origin-top">
                      <h1 className="text-4xl font-black mb-10 text-slate-900 tracking-tighter">Báo cáo Cuộc họp</h1>
                      <div className="grid grid-cols-2 gap-10">
                         <div className="h-64"><ResponsiveContainer><BarChart data={dataBar}><Bar dataKey="val" fill="#137fec" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div>
@@ -532,42 +406,32 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                   </div>
                 )}
 
-                {/* PDF View (Book Flip Mode) */}
-                {!isFallback && activeDoc.type === 'pdf' && pdfDoc && (
-                   <div className="book-perspective relative w-[650px] h-[920px] shadow-2xl mt-8 transition-transform duration-500 origin-top" style={{ transform: `scale(${zoom})` }}>
+                {/* 2. PDF VIEW (VERTICAL SCROLL - STANDARD) */}
+                {isPdf && pdfDoc && (
+                   <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', transition: 'transform 0.2s ease-out' }}>
                      {Array.from(new Array(numPages), (el, index) => (
-                       <div 
-                          key={`page_${index}`} 
-                          className={`book-page absolute inset-0 bg-white shadow-md ${index < currentPage ? 'flipped' : ''}`}
-                          style={{ zIndex: numPages - index }}
-                        >
-                          <PdfPage pdfDoc={pdfDoc} pageNum={index + 1} scale={1.5} />
-                          {/* Số trang góc dưới */}
-                          <div className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-400 bg-white/80 px-2 py-1 rounded">
-                            {index + 1} / {numPages}
-                          </div>
-                       </div>
+                        <PdfPage key={`page_${index + 1}`} pdfDoc={pdfDoc} pageNum={index + 1} scale={1.5} />
                      ))}
                    </div>
                 )}
                 
-                {/* DOCX View (Vẫn giữ cuộn dọc vì tính chất flow document) */}
-                {!isFallback && activeDoc.type === 'docx' && docxHtml && (
-                   <div 
-                     className="bg-white shadow-2xl p-16 min-h-[1100px] docx-content-render origin-top mt-8"
-                     style={{ 
-                       transform: `scale(${zoom})`, 
-                       width: '850px'
-                     }}
-                     dangerouslySetInnerHTML={{ __html: docxHtml }} 
-                   />
+                {/* 3. OFFICE FILE VIEW (GOOGLE DOCS VIEWER) */}
+                {isOfficeFile && activeDoc.url && (
+                   <div className="w-full h-full flex flex-col items-center">
+                      <iframe 
+                        src={`https://docs.google.com/gview?url=${encodeURIComponent(activeDoc.url)}&embedded=true`}
+                        className="w-full h-full max-w-5xl bg-white shadow-lg rounded-xl border border-slate-200"
+                        title="Document Viewer"
+                        frameBorder="0"
+                      ></iframe>
+                   </div>
                 )}
              </div>
            )}
         </div>
       </main>
 
-      {/* AI Assistant Panel (Giữ nguyên) */}
+      {/* AI Assistant Panel */}
       {showAi && (
         <div className="fixed inset-y-0 right-0 w-[480px] bg-white shadow-2xl z-[100] border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-500">
           <div className="p-8 border-b flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center shadow-glow-blue"><span className="material-symbols-outlined fill">smart_toy</span></div><h3 className="font-black text-slate-900 text-lg">AI Assistant</h3></div><button onClick={() => setShowAi(false)} className="p-2 hover:bg-slate-100 rounded-full"><span className="material-symbols-outlined">close</span></button></div>

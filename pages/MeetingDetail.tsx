@@ -113,6 +113,26 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     const newDocs: MeetingDocument[] = [];
 
     try {
+        // 0. Đồng bộ Meeting hiện tại lên DB trước để đảm bảo khóa ngoại (Foreign Key) tồn tại
+        // Điều này xử lý trường hợp Mock Data chưa có trong DB
+        const { error: syncError } = await supabase
+          .from('meetings')
+          .upsert({
+            id: meeting.id,
+            title: meeting.title,
+            start_time: meeting.startTime,
+            end_time: meeting.endTime,
+            room_id: meeting.roomId,
+            host: meeting.host,
+            participants: meeting.participants,
+            status: meeting.status,
+            color: meeting.color
+          });
+
+        if (syncError) {
+           console.warn("Lỗi đồng bộ meeting (có thể bỏ qua nếu đã tồn tại):", syncError.message);
+        }
+
         for (const file of Array.from(files) as File[]) {
             // 1. Upload file lên Supabase Storage
             const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
@@ -126,7 +146,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                 });
 
             if (uploadError) {
-                console.error("Upload error:", uploadError);
+                console.error("Upload Storage error:", uploadError);
                 continue;
             }
 
@@ -146,13 +166,14 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                     size: fileSize,
                     type: fileType,
                     url: publicUrl,
-                    meeting_id: meeting.id // Quan trọng: Liên kết với cuộc họp
+                    meeting_id: meeting.id // Liên kết với cuộc họp
                 }])
                 .select()
                 .single();
 
             if (insertError) {
-                console.error("DB Insert error:", insertError);
+                console.error("DB Insert Document error:", insertError.message);
+                alert(`Không thể lưu thông tin file ${file.name} vào database: ${insertError.message}`);
             } else if (insertData) {
                 newDocs.push({
                     id: insertData.id,

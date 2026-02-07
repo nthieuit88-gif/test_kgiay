@@ -114,7 +114,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
 
     try {
         // 0. Đồng bộ Meeting hiện tại lên DB trước để đảm bảo khóa ngoại (Foreign Key) tồn tại
-        // Điều này xử lý trường hợp Mock Data chưa có trong DB
         const { error: syncError } = await supabase
           .from('meetings')
           .upsert({
@@ -130,7 +129,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
           });
 
         if (syncError) {
-           console.warn("Lỗi đồng bộ meeting (có thể bỏ qua nếu đã tồn tại):", syncError.message);
+           console.warn("Lỗi đồng bộ meeting:", syncError.message);
         }
 
         for (const file of Array.from(files) as File[]) {
@@ -147,6 +146,9 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
 
             if (uploadError) {
                 console.error("Upload Storage error:", uploadError);
+                if (uploadError.message.includes('row-level security') || uploadError.message.includes('policy')) {
+                    alert(`Lỗi quyền truy cập (RLS) khi upload ${file.name}.\nVui lòng chạy script SQL cấu hình Storage trong Supabase SQL Editor.`);
+                }
                 continue;
             }
 

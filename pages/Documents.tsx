@@ -39,7 +39,10 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
           });
 
         if (uploadError) {
-          console.error(`Lỗi upload Storage ${file.name}:`, uploadError.message);
+          console.error(`Lỗi upload Storage ${file.name}:`, uploadError);
+          if (uploadError.message.includes('row-level security') || uploadError.message.includes('policy')) {
+             alert(`Lỗi quyền truy cập (RLS) khi upload ${file.name}.\nVui lòng chạy script SQL trong 'supabase_setup.sql' tại Supabase SQL Editor để khắc phục.`);
+          }
           continue; 
         }
 
@@ -52,8 +55,7 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
           const fileType = file.name.split('.').pop()?.toLowerCase() || 'file';
           const fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
 
-          // 3. Lưu vào DB 'documents'. Lưu ý: Không truyền meeting_id (hoặc null)
-          // Đảm bảo bạn đã chạy lệnh SQL: ALTER TABLE documents ALTER COLUMN meeting_id DROP NOT NULL;
+          // 3. Lưu vào DB 'documents'
           const { data: insertData, error: insertError } = await supabase
             .from('documents')
             .insert([
@@ -62,7 +64,7 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
                 size: fileSize,
                 type: fileType,
                 url: publicUrl,
-                meeting_id: null // Explicitly set null for general documents
+                meeting_id: null
               }
             ])
             .select()

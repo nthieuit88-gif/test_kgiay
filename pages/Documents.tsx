@@ -27,13 +27,17 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
 
     try {
       for (const file of filesToProcess) {
-        // 1. Upload file lên Supabase Storage bucket 'files'
-        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const fileName = `${Date.now()}-${sanitizedFileName}`;
+        // 1. Sanitize file name kỹ càng để tránh lỗi 400 từ Supabase
+        const fileExt = file.name.split('.').pop()?.toLowerCase() || 'file';
+        const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+        // Chỉ giữ lại chữ cái, số, gạch ngang, gạch dưới. Thay thế ký tự lạ bằng '_'
+        const sanitizedName = fileNameWithoutExt.replace(/[^a-zA-Z0-9-_]/g, '_'); 
+        const fileName = `${Date.now()}_${sanitizedName}.${fileExt}`;
+        const filePath = `documents/${fileName}`; // Upload vào thư mục documents
         
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('files')
-          .upload(`public/${fileName}`, file, {
+          .upload(filePath, file, {
             cacheControl: '3600',
             upsert: false
           });
@@ -52,7 +56,6 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
             .from('files')
             .getPublicUrl(uploadData.path);
 
-          const fileType = file.name.split('.').pop()?.toLowerCase() || 'file';
           const fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
 
           // 3. Lưu vào DB 'documents'
@@ -60,9 +63,9 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
             .from('documents')
             .insert([
               {
-                name: file.name,
+                name: file.name, // Giữ nguyên tên hiển thị gốc
                 size: fileSize,
-                type: fileType,
+                type: fileExt,
                 url: publicUrl,
                 meeting_id: null
               }
@@ -102,22 +105,47 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
   };
 
   const handleDelete = async (docId: string, url?: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này?')) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này vĩnh viễn? Hành động này không thể hoàn tác.')) return;
 
-    // Xóa từ DB
-    const { error: dbError } = await supabase
-      .from('documents')
-      .delete()
-      .eq('id', docId);
+    try {
+        // 1. Xóa file khỏi Storage nếu có URL
+        if (url) {
+            // URL thường có dạng: .../storage/v1/object/public/files/documents/filename.ext
+            // Bucket name là 'files'. Tìm vị trí '/files/' và lấy phần path phía sau.
+            const pathIndex = url.indexOf('/files/');
+            if (pathIndex !== -1) {
+                const relativePath = url.substring(pathIndex + 7); // +7 để bỏ qua '/files/'
+                if (relativePath) {
+                    const { error: storageError } = await supabase.storage
+                        .from('files')
+                        .remove([decodeURIComponent(relativePath)]);
+                    
+                    if (storageError) {
+                        console.error('Lỗi xóa storage:', storageError);
+                        // Vẫn tiếp tục để xóa DB
+                    }
+                }
+            }
+        }
 
-    if (dbError) {
-      alert('Lỗi xóa dữ liệu: ' + dbError.message);
-      return;
+        // 2. Xóa khỏi DB
+        const { error: dbError } = await supabase
+            .from('documents')
+            .delete()
+            .eq('id', docId);
+
+        if (dbError) {
+            throw new Error(dbError.message);
+        }
+
+        // 3. Cập nhật UI
+        const updatedDocs = initialDocs.filter(d => d.id !== docId);
+        onUpdateDocs(updatedDocs);
+
+    } catch (error: any) {
+        console.error('Lỗi xóa tài liệu:', error);
+        alert('Không thể xóa tài liệu: ' + error.message);
     }
-
-    // Cập nhật UI
-    const updatedDocs = initialDocs.filter(d => d.id !== docId);
-    onUpdateDocs(updatedDocs);
   };
 
   return (

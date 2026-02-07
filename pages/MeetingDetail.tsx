@@ -118,12 +118,16 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
           });
 
         for (const file of Array.from(files) as File[]) {
-            const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-            const fileName = `${Date.now()}-${sanitizedFileName}`;
+            // Sanitize file name
+            const fileExt = file.name.split('.').pop()?.toLowerCase() || 'file';
+            const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+            const sanitizedName = fileNameWithoutExt.replace(/[^a-zA-Z0-9-_]/g, '_');
+            const fileName = `${Date.now()}_${sanitizedName}.${fileExt}`;
+            const filePath = `documents/${fileName}`;
 
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('files')
-                .upload(`public/${fileName}`, file, {
+                .upload(filePath, file, {
                     cacheControl: '3600',
                     upsert: false
                 });
@@ -141,14 +145,13 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                 .getPublicUrl(uploadData.path);
 
             const fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
-            const fileType = file.name.split('.').pop()?.toLowerCase() || 'file';
 
             const { data: insertData, error: insertError } = await supabase
                 .from('documents')
                 .insert([{
                     name: file.name,
                     size: fileSize,
-                    type: fileType,
+                    type: fileExt,
                     url: publicUrl,
                     meeting_id: meeting.id
                 }])
@@ -189,23 +192,42 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
 
   const handleDeleteDoc = async (e: React.MouseEvent, docId: string) => {
     e.stopPropagation();
-    if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này khỏi cuộc họp?')) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này khỏi cuộc họp? Hành động này không thể hoàn tác.')) return;
 
-    const { error } = await supabase
-        .from('documents')
-        .delete()
-        .eq('id', docId);
+    try {
+        const docToDelete = (meeting.documents || []).find(d => d.id === docId);
 
-    if (error) {
-        alert("Lỗi khi xóa tài liệu: " + error.message);
-        return;
+        // 1. Xóa file khỏi Storage
+        if (docToDelete?.url) {
+            const pathIndex = docToDelete.url.indexOf('/files/');
+            if (pathIndex !== -1) {
+                const relativePath = docToDelete.url.substring(pathIndex + 7);
+                await supabase.storage.from('files').remove([decodeURIComponent(relativePath)]);
+            }
+        }
+
+        // 2. Xóa khỏi DB
+        const { error } = await supabase
+            .from('documents')
+            .delete()
+            .eq('id', docId);
+
+        if (error) {
+            alert("Lỗi khi xóa tài liệu: " + error.message);
+            return;
+        }
+
+        // 3. Update UI
+        const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
+        const updatedMeeting = { ...meeting, documents: updatedDocs };
+        onUpdateMeeting(updatedMeeting);
+        
+        if (activeDoc.id === docId) setActiveDoc(reportDoc);
+
+    } catch (err: any) {
+        console.error('Delete error', err);
+        alert("Có lỗi xảy ra khi xóa tài liệu.");
     }
-
-    const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
-    const updatedMeeting = { ...meeting, documents: updatedDocs };
-    onUpdateMeeting(updatedMeeting);
-    
-    if (activeDoc.id === docId) setActiveDoc(reportDoc);
   };
 
   const startEdit = (e: React.MouseEvent, doc: MeetingDocument) => {
@@ -255,7 +277,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
       return;
     }
 
-    // Nếu là file Office (docx, xlsx, pptx) -> Sẽ dùng Google Viewer, không cần load buffer
+    // Nếu là file Office (docx, xlsx, pptx) -> Sẽ dùng Office Online Viewer, không cần load buffer
     if (['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(activeDoc.type)) {
        setLoading(false);
        return;
@@ -271,7 +293,8 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
           setLoading(false);
         } catch (error) {
            console.error("Error loading PDF", error);
-           setLoading(false);
+           setLoading(false); 
+           alert("Không thể tải PDF. File có thể bị hỏng hoặc đường dẫn không hợp lệ. Hãy thử xóa và tải lại file.");
         }
       } else {
         setLoading(false);
@@ -415,15 +438,17 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                    </div>
                 )}
                 
-                {/* 3. OFFICE FILE VIEW (GOOGLE DOCS VIEWER) */}
+                {/* 3. OFFICE FILE VIEW (MICROSOFT OFFICE ONLINE VIEWER) */}
                 {isOfficeFile && activeDoc.url && (
-                   <div className="w-full h-full flex flex-col items-center">
+                   <div className="w-full h-full flex flex-col items-center min-h-[800px]">
                       <iframe 
-                        src={`https://docs.google.com/gview?url=${encodeURIComponent(activeDoc.url)}&embedded=true`}
+                        src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(activeDoc.url)}`}
                         className="w-full h-full max-w-5xl bg-white shadow-lg rounded-xl border border-slate-200"
                         title="Document Viewer"
                         frameBorder="0"
-                      ></iframe>
+                      >
+                         <p>Trình duyệt không hỗ trợ iframe. <a href={activeDoc.url} target="_blank">Tải xuống tại đây</a></p>
+                      </iframe>
                    </div>
                 )}
              </div>

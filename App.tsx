@@ -122,7 +122,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       // 1. Fetch Meetings và JOIN với bảng Documents
-      // Cú pháp: select('*, documents(*)') nghĩa là lấy tất cả meeting, và lấy tất cả documents thuộc về meeting đó
       const { data: meetingsData, error: meetingsError } = await supabase
         .from('meetings')
         .select(`
@@ -155,17 +154,13 @@ const App: React.FC = () => {
         
         setMeetings(prev => {
            const existingIds = new Set(prev.map(p => p.id));
-           // Chỉ thêm meeting mới nếu chưa có trong mock data ban đầu (để demo mượt hơn)
            const uniqueNewMeetings = fetchedMeetings.filter(m => !existingIds.has(m.id));
-           // Hoặc cập nhật lại toàn bộ nếu muốn data real 100%
-           // return fetchedMeetings; 
-           
-           // Ở đây tôi merge để giữ mock data demo
            return [...prev, ...uniqueNewMeetings];
         });
       }
 
       // 2. Fetch All Documents (Cho trang Kho tài liệu chung)
+      // Lấy tất cả documents (bao gồm cả doc có meeting_id và doc chung meeting_id is null)
       const { data: docsData, error: docsError } = await supabase
         .from('documents')
         .select('*')
@@ -189,13 +184,13 @@ const App: React.FC = () => {
   }, []);
 
   const addMeeting = async (meeting: Meeting) => {
-    // 1. Cập nhật giao diện ngay lập tức (Optimistic UI Update)
+    // 1. Cập nhật giao diện ngay lập tức
     setMeetings(prev => [...prev, meeting]);
     if (meeting.documents) {
       setAllDocuments(prev => [...prev, ...meeting.documents!]);
     }
 
-    // 2. Lưu "đơn hàng" (Booking) vào Supabase Database
+    // 2. Lưu vào Supabase Database
     const { error } = await supabase
       .from('meetings')
       .insert([
@@ -215,20 +210,29 @@ const App: React.FC = () => {
     if (error) {
       console.error('Lỗi khi lưu vào Supabase:', error);
       alert('Không thể lưu dữ liệu đặt lịch vào database: ' + error.message);
-    } else {
-      console.log('Đã lưu dữ liệu đặt lịch thành công vào Supabase');
-      
-      // Nếu có tài liệu đính kèm lúc tạo, cập nhật meeting_id cho các tài liệu đó
-      // (Lưu ý: Logic này giả định tài liệu đã được upload trước đó và có ID,
-      // tuy nhiên ở Calendar.tsx hiện tại tài liệu tạo mới có ID random.
-      // Để hoàn thiện flow này cần sửa Calendar.tsx upload thật trước, nhưng ở đây
-      // ta tập trung vào MeetingDetail trước).
     }
   };
 
   const updateMeeting = (updatedMeeting: Meeting) => {
+    // 1. Cập nhật danh sách meetings
     setMeetings(prev => prev.map(m => m.id === updatedMeeting.id ? updatedMeeting : m));
-    // Cập nhật lại selectedMeeting nếu đang xem chi tiết cuộc họp đó
+
+    // 2. Đồng bộ tài liệu mới vào Kho tài liệu chung (allDocuments)
+    // Nếu trong updatedMeeting có tài liệu mới chưa có trong allDocuments, hãy thêm vào
+    if (updatedMeeting.documents && updatedMeeting.documents.length > 0) {
+      setAllDocuments(prevAllDocs => {
+        const existingDocIds = new Set(prevAllDocs.map(d => d.id));
+        const newDocsFromMeeting = updatedMeeting.documents!.filter(d => !existingDocIds.has(d.id));
+        
+        if (newDocsFromMeeting.length > 0) {
+          // Thêm tài liệu mới vào đầu danh sách
+          return [...newDocsFromMeeting, ...prevAllDocs];
+        }
+        return prevAllDocs;
+      });
+    }
+
+    // 3. Cập nhật lại selectedMeeting nếu đang xem chi tiết
     if (selectedMeeting && selectedMeeting.id === updatedMeeting.id) {
       setSelectedMeeting(updatedMeeting);
     }

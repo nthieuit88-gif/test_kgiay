@@ -27,12 +27,10 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
 
     try {
       for (const file of filesToProcess) {
-        // 1. Tạo tên file duy nhất để tránh trùng lặp
-        // Loại bỏ các ký tự đặc biệt khỏi tên file gốc
+        // 1. Upload file lên Supabase Storage bucket 'files'
         const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         const fileName = `${Date.now()}-${sanitizedFileName}`;
         
-        // 2. Upload file lên Supabase Storage bucket 'files'
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('files')
           .upload(`public/${fileName}`, file, {
@@ -41,12 +39,12 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
           });
 
         if (uploadError) {
-          console.error(`Lỗi upload file ${file.name}:`, uploadError.message);
-          continue; // Bỏ qua file lỗi, tiếp tục file khác
+          console.error(`Lỗi upload Storage ${file.name}:`, uploadError.message);
+          continue; 
         }
 
         if (uploadData) {
-          // 3. Lấy Public URL
+          // 2. Lấy Public URL
           const { data: { publicUrl } } = supabase.storage
             .from('files')
             .getPublicUrl(uploadData.path);
@@ -54,7 +52,8 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
           const fileType = file.name.split('.').pop()?.toLowerCase() || 'file';
           const fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
 
-          // 4. Lưu thông tin (metadata) vào bảng 'documents' trong Database
+          // 3. Lưu vào DB 'documents'. Lưu ý: Không truyền meeting_id (hoặc null)
+          // Đảm bảo bạn đã chạy lệnh SQL: ALTER TABLE documents ALTER COLUMN meeting_id DROP NOT NULL;
           const { data: insertData, error: insertError } = await supabase
             .from('documents')
             .insert([
@@ -62,23 +61,24 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
                 name: file.name,
                 size: fileSize,
                 type: fileType,
-                url: publicUrl
+                url: publicUrl,
+                meeting_id: null // Explicitly set null for general documents
               }
             ])
             .select()
             .single();
 
           if (insertError) {
-             console.error(`Lỗi lưu DB file ${file.name}:`, insertError.message);
+             console.error(`Lỗi Insert DB ${file.name}:`, insertError.message, insertError.details);
+             alert(`Lỗi lưu DB cho ${file.name}: ${insertError.message}. Hãy đảm bảo bạn đã cấu hình RLS và meeting_id nullable.`);
           } else if (insertData) {
-            // 5. Chuẩn bị dữ liệu để update UI
             uploadedDocs.push({
               id: insertData.id,
               name: insertData.name,
               size: insertData.size,
               type: insertData.type,
               url: insertData.url,
-              file: file // Giữ file object nếu cần dùng local tạm thời
+              file: file 
             });
           }
         }
@@ -92,7 +92,7 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
 
     } catch (error: any) {
       console.error('Lỗi quá trình upload:', error);
-      alert('Có lỗi xảy ra trong quá trình tải lên.');
+      alert('Có lỗi xảy ra trong quá trình tải lên. Vui lòng kiểm tra console.');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -116,10 +116,6 @@ const Documents: React.FC<DocumentsProps> = ({ initialDocs, onUpdateDocs }) => {
     // Cập nhật UI
     const updatedDocs = initialDocs.filter(d => d.id !== docId);
     onUpdateDocs(updatedDocs);
-    
-    // Lưu ý: Việc xóa file vật lý trong Storage có thể thực hiện thêm ở đây
-    // bằng cách parse path từ URL, nhưng thường ta chỉ cần xóa record trong DB
-    // hoặc dùng Edge Function để dọn dẹp sau.
   };
 
   return (

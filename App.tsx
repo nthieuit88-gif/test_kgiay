@@ -64,11 +64,7 @@ const App: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>(INITIAL_ROOMS);
   
   // Kho tài liệu tổng hợp
-  const [allDocuments, setAllDocuments] = useState<MeetingDocument[]>([
-    { id: 'd1', name: 'Báo cáo Tài chính Q3.pdf', size: '2.4MB', type: 'pdf' },
-    { id: 'd2', name: 'Nghị quyết Hội đồng Quản trị.docx', size: '1.1MB', type: 'docx' },
-    { id: 'd3', name: 'Kế hoạch nhân sự 2024.pdf', size: '856KB', type: 'pdf' }
-  ]);
+  const [allDocuments, setAllDocuments] = useState<MeetingDocument[]>([]);
 
   // Danh sách cuộc họp ban đầu (Mock Data)
   const [meetings, setMeetings] = useState<Meeting[]>([
@@ -82,7 +78,7 @@ const App: React.FC = () => {
       participants: 12, 
       status: 'approved', 
       color: 'blue',
-      documents: [allDocuments[0], allDocuments[1]]
+      documents: []
     },
     { 
       id: '2', 
@@ -94,7 +90,7 @@ const App: React.FC = () => {
       participants: 8, 
       status: 'approved', 
       color: 'purple',
-      documents: [allDocuments[2]]
+      documents: []
     },
     { 
       id: '3', 
@@ -122,17 +118,18 @@ const App: React.FC = () => {
     }
   ]);
 
-  // Load meetings from Supabase on start
+  // Load data from Supabase on start
   useEffect(() => {
-    const fetchMeetings = async () => {
-      const { data, error } = await supabase
+    const fetchData = async () => {
+      // 1. Fetch Meetings
+      const { data: meetingsData, error: meetingsError } = await supabase
         .from('meetings')
         .select('*');
 
-      if (error) {
-        console.error('Error fetching meetings from Supabase:', error);
-      } else if (data) {
-        const fetchedMeetings: Meeting[] = data.map((m: any) => ({
+      if (meetingsError) {
+        console.error('Error fetching meetings:', meetingsError);
+      } else if (meetingsData) {
+        const fetchedMeetings: Meeting[] = meetingsData.map((m: any) => ({
           id: m.id,
           title: m.title,
           startTime: m.start_time,
@@ -142,19 +139,37 @@ const App: React.FC = () => {
           participants: m.participants,
           status: m.status as 'approved' | 'pending' | 'cancelled',
           color: m.color as 'blue' | 'purple' | 'orange' | 'emerald',
-          documents: [] // Documents logic can be extended via Supabase Storage if needed
+          documents: [] 
         }));
         
-        // Merge fetched meetings with initial mock data (avoiding duplicates by ID)
         setMeetings(prev => {
            const existingIds = new Set(prev.map(p => p.id));
            const uniqueNewMeetings = fetchedMeetings.filter(m => !existingIds.has(m.id));
            return [...prev, ...uniqueNewMeetings];
         });
       }
+
+      // 2. Fetch Documents
+      const { data: docsData, error: docsError } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (docsError) {
+        console.error('Error fetching documents:', docsError);
+      } else if (docsData) {
+        const fetchedDocs: MeetingDocument[] = docsData.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          size: d.size,
+          type: d.type,
+          url: d.url
+        }));
+        setAllDocuments(fetchedDocs);
+      }
     };
 
-    fetchMeetings();
+    fetchData();
   }, []);
 
   const addMeeting = async (meeting: Meeting) => {

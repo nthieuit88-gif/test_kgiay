@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
 import { Meeting, MeetingDocument } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 const mammoth = (window as any).mammoth;
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
@@ -73,6 +74,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   
   // PDF State
   const [pdfDoc, setPdfDoc] = useState<any>(null);
@@ -98,38 +100,111 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     if (currentPage > 0) setCurrentPage(p => p - 1);
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files.length > 0) {
-      const newFiles = Array.from(event.target.files).map((item) => {
-         const file = item as File;
-         return {
-            id: Math.random().toString(36).substr(2, 9),
-            name: file.name,
-            size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-            type: file.name.split('.').pop()?.toLowerCase() || 'file',
-            file: file,
-            url: URL.createObjectURL(file)
-         };
-      });
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-      const updatedMeeting = {
-         ...meeting,
-         documents: [...(meeting.documents || []), ...newFiles]
-      };
-      onUpdateMeeting(updatedMeeting);
-      
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    if (files.length > 5) {
+      alert("Vui lòng tải tối đa 5 tài liệu một lúc.");
+      return;
+    }
+
+    setIsUploading(true);
+    const newDocs: MeetingDocument[] = [];
+
+    try {
+        for (const file of Array.from(files) as File[]) {
+            // 1. Upload file lên Supabase Storage
+            const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const fileName = `${Date.now()}-${sanitizedFileName}`;
+
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('files')
+                .upload(`public/${fileName}`, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+            if (uploadError) {
+                console.error("Upload error:", uploadError);
+                continue;
+            }
+
+            // 2. Lấy Public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('files')
+                .getPublicUrl(uploadData.path);
+
+            const fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+            const fileType = file.name.split('.').pop()?.toLowerCase() || 'file';
+
+            // 3. Lưu vào Database kèm meeting_id
+            const { data: insertData, error: insertError } = await supabase
+                .from('documents')
+                .insert([{
+                    name: file.name,
+                    size: fileSize,
+                    type: fileType,
+                    url: publicUrl,
+                    meeting_id: meeting.id // Quan trọng: Liên kết với cuộc họp
+                }])
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error("DB Insert error:", insertError);
+            } else if (insertData) {
+                newDocs.push({
+                    id: insertData.id,
+                    name: insertData.name,
+                    size: insertData.size,
+                    type: insertData.type,
+                    url: insertData.url,
+                    file: file
+                });
+            }
+        }
+
+        if (newDocs.length > 0) {
+            const updatedMeeting = {
+                ...meeting,
+                documents: [...(meeting.documents || []), ...newDocs]
+            };
+            onUpdateMeeting(updatedMeeting);
+            // Tự động mở tài liệu vừa tải lên đầu tiên
+            setActiveDoc(newDocs[0]);
+        }
+
+    } catch (e) {
+        console.error("General upload error", e);
+        alert("Có lỗi xảy ra khi tải tài liệu.");
+    } finally {
+        setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleDeleteDoc = (e: React.MouseEvent, docId: string) => {
+  const handleDeleteDoc = async (e: React.MouseEvent, docId: string) => {
     e.stopPropagation();
-    if (window.confirm('Bạn có chắc chắn muốn xóa tài liệu này khỏi cuộc họp?')) {
-        const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
-        const updatedMeeting = { ...meeting, documents: updatedDocs };
-        onUpdateMeeting(updatedMeeting);
-        if (activeDoc.id === docId) setActiveDoc(reportDoc);
+    if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này khỏi cuộc họp?')) return;
+
+    // 1. Xóa khỏi Database Supabase
+    const { error } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', docId);
+
+    if (error) {
+        alert("Lỗi khi xóa tài liệu: " + error.message);
+        return;
     }
+
+    // 2. Cập nhật State Local
+    const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
+    const updatedMeeting = { ...meeting, documents: updatedDocs };
+    onUpdateMeeting(updatedMeeting);
+    
+    if (activeDoc.id === docId) setActiveDoc(reportDoc);
   };
 
   const startEdit = (e: React.MouseEvent, doc: MeetingDocument) => {
@@ -314,8 +389,8 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                 <span className="font-bold text-slate-800 text-xs truncate" title={meeting.title}>{meeting.title}</span>
              </div>
            </div>
-           <button onClick={() => fileInputRef.current?.click()} className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl shadow-glow-blue hover:bg-blue-600 transition-all active:scale-95" title="Thêm tài liệu">
-              <span className="material-symbols-outlined text-[20px]">add</span>
+           <button onClick={() => !isUploading && fileInputRef.current?.click()} className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl shadow-glow-blue hover:bg-blue-600 transition-all active:scale-95 disabled:opacity-50" title="Thêm tài liệu">
+              {isUploading ? <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span> : <span className="material-symbols-outlined text-[20px]">add</span>}
            </button>
         </div>
         

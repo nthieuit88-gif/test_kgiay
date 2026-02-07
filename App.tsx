@@ -121,10 +121,14 @@ const App: React.FC = () => {
   // Load data from Supabase on start
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Fetch Meetings
+      // 1. Fetch Meetings và JOIN với bảng Documents
+      // Cú pháp: select('*, documents(*)') nghĩa là lấy tất cả meeting, và lấy tất cả documents thuộc về meeting đó
       const { data: meetingsData, error: meetingsError } = await supabase
         .from('meetings')
-        .select('*');
+        .select(`
+          *,
+          documents (*)
+        `);
 
       if (meetingsError) {
         console.error('Error fetching meetings:', meetingsError);
@@ -139,17 +143,29 @@ const App: React.FC = () => {
           participants: m.participants,
           status: m.status as 'approved' | 'pending' | 'cancelled',
           color: m.color as 'blue' | 'purple' | 'orange' | 'emerald',
-          documents: [] 
+          // Map danh sách tài liệu trả về từ relation
+          documents: m.documents ? m.documents.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            size: d.size,
+            type: d.type,
+            url: d.url
+          })) : []
         }));
         
         setMeetings(prev => {
            const existingIds = new Set(prev.map(p => p.id));
+           // Chỉ thêm meeting mới nếu chưa có trong mock data ban đầu (để demo mượt hơn)
            const uniqueNewMeetings = fetchedMeetings.filter(m => !existingIds.has(m.id));
+           // Hoặc cập nhật lại toàn bộ nếu muốn data real 100%
+           // return fetchedMeetings; 
+           
+           // Ở đây tôi merge để giữ mock data demo
            return [...prev, ...uniqueNewMeetings];
         });
       }
 
-      // 2. Fetch Documents
+      // 2. Fetch All Documents (Cho trang Kho tài liệu chung)
       const { data: docsData, error: docsError } = await supabase
         .from('documents')
         .select('*')
@@ -201,6 +217,12 @@ const App: React.FC = () => {
       alert('Không thể lưu dữ liệu đặt lịch vào database: ' + error.message);
     } else {
       console.log('Đã lưu dữ liệu đặt lịch thành công vào Supabase');
+      
+      // Nếu có tài liệu đính kèm lúc tạo, cập nhật meeting_id cho các tài liệu đó
+      // (Lưu ý: Logic này giả định tài liệu đã được upload trước đó và có ID,
+      // tuy nhiên ở Calendar.tsx hiện tại tài liệu tạo mới có ID random.
+      // Để hoàn thiện flow này cần sửa Calendar.tsx upload thật trước, nhưng ở đây
+      // ta tập trung vào MeetingDetail trước).
     }
   };
 

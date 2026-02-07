@@ -6,9 +6,10 @@ interface RoomManagementProps {
   onAddMeeting: (meeting: Meeting) => void;
   meetings: Meeting[];
   rooms: Room[]; // Nhận rooms từ props
+  onViewMeeting?: (meeting: Meeting) => void;
 }
 
-const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings, rooms }) => {
+const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings, rooms, onViewMeeting }) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,33 +180,31 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
                    const isOngoing = new Date() >= new Date(meeting.startTime) && new Date() <= new Date(meeting.endTime);
                    
                    return (
-                      <div key={meeting.id} className="min-w-[320px] bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 group relative overflow-hidden snap-start">
-                         {/* Status Stripe */}
-                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${isOngoing ? 'bg-emerald-500' : 'bg-primary'}`}></div>
-                         
-                         <div className="flex justify-between items-start pl-2">
-                            <div className="flex flex-col">
-                               <span className={`text-[10px] font-black uppercase tracking-wider mb-0.5 ${isOngoing ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                  {isOngoing ? 'Đang diễn ra' : new Date(meeting.startTime).toLocaleDateString('vi-VN')}
-                               </span>
-                               <h4 className="font-bold text-slate-800 text-sm line-clamp-1" title={meeting.title}>{meeting.title}</h4>
-                            </div>
-                            <span className={`w-2 h-2 rounded-full ${isOngoing ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+                      <div key={meeting.id} className="min-w-[340px] bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col gap-4 group relative overflow-hidden snap-start">
+                         <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-400">{new Date(meeting.startTime).toLocaleDateString('en-GB')}</span>
+                            <div className={`w-2 h-2 rounded-full ${isOngoing ? 'bg-emerald-500 animate-pulse' : 'bg-slate-200'}`}></div>
                          </div>
 
-                         <div className="pl-2 flex gap-2">
-                            <div className="flex-1 bg-slate-50 rounded-lg p-2">
-                               <p className="text-[10px] text-slate-400 uppercase font-bold">Thời gian</p>
-                               <p className="text-xs font-bold text-slate-700">{new Date(meeting.startTime).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}</p>
+                         <h4 className="font-bold text-slate-900 text-base line-clamp-1">{meeting.title}</h4>
+
+                         <div className="flex bg-slate-50 rounded-xl p-3 gap-4">
+                            <div className="flex flex-col gap-1 flex-1">
+                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Thời gian</span>
+                               <span className="text-sm font-bold text-slate-700">{new Date(meeting.startTime).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}</span>
                             </div>
-                            <div className="flex-1 bg-slate-50 rounded-lg p-2">
-                               <p className="text-[10px] text-slate-400 uppercase font-bold">Phòng</p>
-                               <p className="text-xs font-bold text-slate-700 truncate">{room?.name}</p>
+                            <div className="w-px bg-slate-200"></div>
+                            <div className="flex flex-col gap-1 flex-1 overflow-hidden">
+                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Phòng</span>
+                               <span className="text-sm font-bold text-slate-700 truncate">{room?.name}</span>
                             </div>
                          </div>
 
-                         <button className="w-full mt-1 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
-                            Tham gia ngay <span className="material-symbols-outlined text-[14px]">login</span>
+                         <button 
+                            onClick={() => onViewMeeting?.(meeting)}
+                            className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-xs hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-95"
+                         >
+                            Tham gia ngay <span className="material-symbols-outlined text-[16px]">login</span>
                          </button>
                       </div>
                    )

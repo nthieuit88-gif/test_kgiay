@@ -128,6 +128,7 @@ const App: React.FC = () => {
             onAddMeeting={addMeeting} 
             meetings={meetings} 
             rooms={rooms}
+            onViewMeeting={handleViewMeeting}
           />
         );
       case Page.DOCUMENTS:

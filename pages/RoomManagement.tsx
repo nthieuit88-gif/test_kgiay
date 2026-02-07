@@ -5,46 +5,19 @@ import { Room, Meeting, MeetingDocument } from '../types';
 interface RoomManagementProps {
   onAddMeeting: (meeting: Meeting) => void;
   meetings: Meeting[];
+  rooms: Room[]; // Nhận rooms từ props
 }
 
-const ROOMS_DATA: Room[] = [
-  {
-    id: 'room-1',
-    name: 'Phòng Khánh Tiết',
-    location: 'Tầng 1 - Khu A',
-    capacity: '20 - 30',
-    area: '120m²',
-    image: 'https://images.unsplash.com/photo-1577412647305-991150c7d163?auto=format&fit=crop&q=80&w=2340',
-    status: 'available',
-    amenities: ['Micro', 'Video Conf', 'Tea break', 'Wifi 6']
-  },
-  {
-    id: 'room-2',
-    name: 'Phòng Họp 202',
-    location: 'Tầng 2 - Khu B',
-    capacity: '8 - 10',
-    area: '45m²',
-    image: 'https://images.unsplash.com/photo-1600508774634-4e11d34730e2?auto=format&fit=crop&q=80&w=2340',
-    status: 'busy',
-    amenities: ['Tivi 75"', 'Bảng trắng', 'Điều hòa']
-  },
-  {
-    id: 'room-3',
-    name: 'Hội Trường A',
-    location: 'Tầng 3 - Trung Tâm',
-    capacity: '200+',
-    area: '500m²',
-    image: 'https://images.unsplash.com/photo-1544982590-0f2c42ce095d?auto=format&fit=crop&q=80&w=2340',
-    status: 'available',
-    amenities: ['Bục phát biểu', 'Màn hình LED', 'Âm thanh']
-  }
-];
-
-const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings }) => {
+const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings, rooms }) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Lọc các cuộc họp của "Tôi"
+  const myMeetings = meetings
+    .filter(m => m.host.includes('Tôi') || m.host === 'Nguyễn Văn A')
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
   const [bookingForm, setBookingForm] = useState({
     title: '',
     date: new Date().toISOString().split('T')[0],
@@ -114,7 +87,6 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings 
 
     onAddMeeting(newMeeting);
     setShowBookingModal(false);
-    alert('Đã gửi yêu cầu đặt phòng kèm tài liệu thành công!');
   };
 
   return (
@@ -126,7 +98,7 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings 
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
             <input
               className="w-full bg-slate-50 border border-slate-200 text-sm rounded-lg pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              placeholder="Tìm phòng theo tên..."
+              placeholder="Tìm phòng..."
               type="text"
             />
           </div>
@@ -134,203 +106,185 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings 
       </header>
 
       <div className="p-8 max-w-[1600px] mx-auto space-y-8">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Danh sách Phòng</h1>
-            <p className="text-slate-500 font-medium">Chọn một phòng để xem lịch và đặt phòng ngay.</p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Danh sách Phòng</h1>
+          <p className="text-slate-500 font-medium">Đặt phòng nhanh chóng cho cuộc họp tiếp theo của bạn.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-          {ROOMS_DATA.map((room) => {
+        {/* Danh sách phòng dạng Grid Compact */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {rooms.map((room) => {
             const isBusy = room.status === 'busy' || meetings.some(m => m.roomId === room.id && new Date(m.startTime).toDateString() === new Date().toDateString());
             
             return (
-              <div key={room.id} className="group bg-white rounded-3xl border border-slate-100 shadow-soft overflow-hidden hover:shadow-soft-hover hover:-translate-y-1 transition-all duration-300 flex flex-col">
-                <div className="relative h-56 overflow-hidden">
+              <div key={room.id} className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col">
+                <div className="relative h-40 overflow-hidden shrink-0">
                   <img alt={room.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src={room.image} />
-                  <div className="absolute top-4 left-4">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-white/95 backdrop-blur-sm shadow-md border ${isBusy ? 'text-orange-600 border-orange-100' : 'text-emerald-600 border-emerald-100'}`}>
-                      <span className={`w-2 h-2 rounded-full ${isBusy ? 'bg-orange-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></span>
-                      {isBusy ? 'Đang bận' : 'Đang trống'}
+                  <div className="absolute top-3 right-3">
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider backdrop-blur-md shadow-sm border ${isBusy ? 'bg-white/90 text-orange-600 border-orange-100' : 'bg-white/90 text-emerald-600 border-emerald-100'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isBusy ? 'bg-orange-500' : 'bg-emerald-500'}`}></span>
+                      {isBusy ? 'Bận' : 'Sẵn sàng'}
                     </span>
                   </div>
                 </div>
-                <div className="p-6 flex-1 flex flex-col">
-                  <h3 className="text-xl font-bold text-slate-900 mb-1">{room.name}</h3>
-                  <p className="text-slate-500 text-sm flex items-center gap-1 mb-4 font-medium">
-                    <span className="material-symbols-outlined text-[18px]">location_on</span>
-                    {room.location}
-                  </p>
+                
+                <div className="p-4 flex flex-col flex-1 gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 leading-tight">{room.name}</h3>
+                    <p className="text-slate-500 text-xs flex items-center gap-1 font-medium mt-1">
+                      <span className="material-symbols-outlined text-[14px]">location_on</span>
+                      {room.location}
+                    </p>
+                  </div>
                   
-                  <div className="flex items-center gap-6 mb-6">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sức chứa</span>
-                      <span className="text-sm font-bold text-slate-700">{room.capacity} người</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Diện tích</span>
-                      <span className="text-sm font-bold text-slate-700">{room.area}</span>
-                    </div>
+                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg text-xs font-bold text-slate-600">
+                     <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">groups</span> {room.capacity}</span>
+                     <span className="w-px h-3 bg-slate-300"></span>
+                     <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">crop_square</span> {room.area}</span>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 mb-6">
-                    {room.amenities.map(amenity => (
-                      <span key={amenity} className="px-2 py-1 bg-slate-50 border border-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-tighter">
-                        {amenity}
-                      </span>
-                    ))}
+                  <div className="flex flex-wrap gap-1">
+                     {room.amenities.slice(0,3).map(am => <span key={am} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{am}</span>)}
                   </div>
 
-                  <button 
-                    onClick={() => handleOpenBooking(room)}
-                    className={`w-full py-3 rounded-2xl font-bold text-sm transition-all shadow-lg ${isBusy ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-primary text-white shadow-primary/20 hover:bg-blue-600 active:scale-95'}`}
-                  >
-                    {isBusy ? 'Đã kín lịch hôm nay' : 'Đặt phòng ngay'}
-                  </button>
+                  <div className="mt-auto pt-3 border-t border-slate-50 flex justify-end">
+                    <button 
+                      onClick={() => handleOpenBooking(room)}
+                      disabled={isBusy}
+                      className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${isBusy ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600 shadow-glow-blue active:scale-95'}`}
+                    >
+                      {isBusy ? 'Đã kín' : <><span className="material-symbols-outlined text-[16px]">add</span> Đặt phòng</>}
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
+
+        {/* Khu vực vCard Lịch họp của bạn - Horizontal Scroll */}
+        {myMeetings.length > 0 && (
+          <div className="pt-6 border-t border-slate-200 animate-in fade-in slide-in-from-bottom-6 duration-700">
+             <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                   <span className="material-symbols-outlined text-primary">event_upcoming</span>
+                   Lịch họp của bạn
+                </h3>
+                <span className="text-xs font-bold text-slate-400">{myMeetings.length} phiên họp sắp tới</span>
+             </div>
+
+             <div className="flex overflow-x-auto gap-4 pb-4 snap-x custom-scrollbar">
+                {myMeetings.map((meeting) => {
+                   const room = rooms.find(r => r.id === meeting.roomId);
+                   const isOngoing = new Date() >= new Date(meeting.startTime) && new Date() <= new Date(meeting.endTime);
+                   
+                   return (
+                      <div key={meeting.id} className="min-w-[320px] bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 group relative overflow-hidden snap-start">
+                         {/* Status Stripe */}
+                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${isOngoing ? 'bg-emerald-500' : 'bg-primary'}`}></div>
+                         
+                         <div className="flex justify-between items-start pl-2">
+                            <div className="flex flex-col">
+                               <span className={`text-[10px] font-black uppercase tracking-wider mb-0.5 ${isOngoing ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                  {isOngoing ? 'Đang diễn ra' : new Date(meeting.startTime).toLocaleDateString('vi-VN')}
+                               </span>
+                               <h4 className="font-bold text-slate-800 text-sm line-clamp-1" title={meeting.title}>{meeting.title}</h4>
+                            </div>
+                            <span className={`w-2 h-2 rounded-full ${isOngoing ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+                         </div>
+
+                         <div className="pl-2 flex gap-2">
+                            <div className="flex-1 bg-slate-50 rounded-lg p-2">
+                               <p className="text-[10px] text-slate-400 uppercase font-bold">Thời gian</p>
+                               <p className="text-xs font-bold text-slate-700">{new Date(meeting.startTime).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}</p>
+                            </div>
+                            <div className="flex-1 bg-slate-50 rounded-lg p-2">
+                               <p className="text-[10px] text-slate-400 uppercase font-bold">Phòng</p>
+                               <p className="text-xs font-bold text-slate-700 truncate">{room?.name}</p>
+                            </div>
+                         </div>
+
+                         <button className="w-full mt-1 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
+                            Tham gia ngay <span className="material-symbols-outlined text-[14px]">login</span>
+                         </button>
+                      </div>
+                   )
+                })}
+             </div>
+          </div>
+        )}
       </div>
 
       {/* Booking Modal */}
       {showBookingModal && selectedRoom && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[28px]">add_task</span>
+          <div className="bg-white rounded-[2rem] w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[24px]">add_task</span>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-slate-900">Đặt lịch họp</h2>
-                  <p className="text-sm text-slate-500 font-medium">{selectedRoom.name}</p>
+                  <h2 className="text-lg font-black text-slate-900">Đặt lịch họp</h2>
+                  <p className="text-xs text-slate-500 font-medium">{selectedRoom.name}</p>
                 </div>
               </div>
-              <button onClick={() => setShowBookingModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              <button onClick={() => setShowBookingModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><span className="material-symbols-outlined">close</span></button>
             </div>
             
-            <form onSubmit={handleBookingSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
-              <div className="space-y-2">
-                <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Tiêu đề cuộc họp</label>
-                <input 
-                  required
-                  value={bookingForm.title}
-                  onChange={e => setBookingForm({...bookingForm, title: e.target.value})}
-                  className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 placeholder-slate-300 transition-all" 
-                  placeholder="Ví dụ: Họp bàn kế hoạch Marketing Q4"
-                />
+            <form onSubmit={handleBookingSubmit} className="p-6 space-y-5 overflow-y-auto">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Tiêu đề</label>
+                <input required value={bookingForm.title} onChange={e => setBookingForm({...bookingForm, title: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-slate-800 text-sm" placeholder="Nhập tiêu đề cuộc họp" />
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Ngày họp</label>
-                  <input 
-                    type="date"
-                    required
-                    value={bookingForm.date}
-                    onChange={e => setBookingForm({...bookingForm, date: e.target.value})}
-                    className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" 
-                  />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Ngày</label>
+                  <input type="date" required value={bookingForm.date} onChange={e => setBookingForm({...bookingForm, date: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-slate-800 text-sm" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Số lượng người</label>
-                  <input 
-                    type="number"
-                    required
-                    value={bookingForm.participants}
-                    onChange={e => setBookingForm({...bookingForm, participants: parseInt(e.target.value)})}
-                    className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" 
-                  />
+                <div className="space-y-1.5">
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Số người</label>
+                   <input type="number" required value={bookingForm.participants} onChange={e => setBookingForm({...bookingForm, participants: parseInt(e.target.value)})} className="w-full bg-slate-50 border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-slate-800 text-sm" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Bắt đầu</label>
-                  <input 
-                    type="time"
-                    required
-                    value={bookingForm.startTime}
-                    onChange={e => setBookingForm({...bookingForm, startTime: e.target.value})}
-                    className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" 
-                  />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Bắt đầu</label>
+                  <input type="time" required value={bookingForm.startTime} onChange={e => setBookingForm({...bookingForm, startTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-slate-800 text-sm" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Kết thúc</label>
-                  <input 
-                    type="time"
-                    required
-                    value={bookingForm.endTime}
-                    onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})}
-                    className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" 
-                  />
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Kết thúc</label>
+                  <input type="time" required value={bookingForm.endTime} onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-slate-800 text-sm" />
                 </div>
               </div>
 
-              <div className="space-y-3 pt-4 border-t border-slate-100">
+              <div className="space-y-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Tài liệu đính kèm (Tối đa 10 file)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Tài liệu</label>
                   <span className="text-[10px] font-bold text-slate-400">{bookingForm.files.length}/10</span>
                 </div>
-                
-                <div 
-                  onClick={() => bookingForm.files.length < 10 && fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-[1.5rem] p-6 transition-all flex flex-col items-center justify-center gap-3 group cursor-pointer
-                    ${bookingForm.files.length >= 10 
-                      ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed' 
-                      : 'border-slate-200 hover:border-primary hover:bg-primary/5'}`}
-                >
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    multiple 
-                    onChange={handleFileChange} 
-                    className="hidden" 
-                    accept=".pdf,.docx,.xlsx,.pptx"
-                  />
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${bookingForm.files.length >= 10 ? 'bg-slate-200 text-slate-400' : 'bg-slate-100 text-slate-500 group-hover:bg-primary group-hover:text-white'}`}>
-                    <span className="material-symbols-outlined text-[28px]">cloud_upload</span>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-bold text-slate-700">Nhấn để tải tài liệu lên</p>
-                    <p className="text-xs text-slate-400 mt-1">Hỗ trợ tối đa 10 tệp (PDF, Word, Excel, PPT)</p>
-                  </div>
+                <div onClick={() => bookingForm.files.length < 10 && fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 hover:border-primary hover:bg-primary/5 rounded-xl p-4 cursor-pointer flex flex-col items-center gap-1 transition-all">
+                   <span className="material-symbols-outlined text-slate-400">cloud_upload</span>
+                   <span className="text-xs font-bold text-slate-500">Tải lên (PDF, Docx)</span>
+                   <input type="file" ref={fileInputRef} multiple onChange={handleFileChange} className="hidden" accept=".pdf,.docx,.xlsx,.pptx" />
                 </div>
-
                 {bookingForm.files.length > 0 && (
-                  <div className="grid grid-cols-1 gap-2 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                    {bookingForm.files.map((file, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-xl group hover:border-slate-300 transition-all">
-                        <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-primary">
-                          <span className="material-symbols-outlined text-[20px]">
-                            {file.name.endsWith('.pdf') ? 'picture_as_pdf' : 'description'}
-                          </span>
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                          <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">{(file.size / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <button 
-                          type="button" 
-                          onClick={() => removeFile(idx)}
-                          className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                   <div className="grid grid-cols-1 gap-1 max-h-24 overflow-y-auto custom-scrollbar">
+                      {bookingForm.files.map((file, idx) => (
+                         <div key={idx} className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg">
+                            <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">{file.name}</span>
+                            <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-rose-500"><span className="material-symbols-outlined text-[16px]">close</span></button>
+                         </div>
+                      ))}
+                   </div>
                 )}
               </div>
 
-              <div className="flex gap-4 pt-6 border-t border-slate-100 shrink-0">
-                <button type="button" onClick={() => setShowBookingModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-bold hover:bg-slate-200 transition-all">Hủy bỏ</button>
-                <button type="submit" className="flex-1 py-4 rounded-2xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-blue-600 active:scale-95 transition-all">Gửi yêu cầu đặt</button>
+              <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setShowBookingModal(false)} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-500 font-bold hover:bg-slate-200 text-sm">Hủy</button>
+                <button type="submit" className="flex-1 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-blue-600 active:scale-95 text-sm">Xác nhận</button>
               </div>
             </form>
           </div>

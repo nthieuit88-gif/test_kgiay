@@ -1,11 +1,13 @@
 
 import React from 'react';
-import { Page, Meeting } from '../types';
+import { Page, Meeting, Room, MeetingDocument } from '../types';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 
 interface DashboardProps {
     onNavigate: (page: Page) => void;
     meetings: Meeting[];
+    rooms: Room[];
+    documents: MeetingDocument[];
     onViewMeeting?: (meeting: Meeting) => void;
 }
 
@@ -18,7 +20,10 @@ const data = [
   { name: 'Thứ 7', meetings: 2, hours: 4 },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, onViewMeeting }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, rooms, documents, onViewMeeting }) => {
+  // Tính toán số liệu thực tế
+  const busyRoomsCount = rooms.filter(r => r.status === 'busy').length;
+  
   return (
     <main className="flex-1 overflow-y-auto bg-[#f8fafc] page-transition">
       <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl px-8 py-5 flex items-center justify-between border-b border-slate-200/60 shadow-sm">
@@ -45,7 +50,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, onViewMeeti
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 animate-fade-in-up">
           <div className="space-y-1">
             <h1 className="text-4xl font-black text-slate-900 tracking-tight">Xin chào, Quản trị viên!</h1>
-            <p className="text-slate-500 font-medium">Hôm nay hệ thống ghi nhận <span className="text-primary font-bold">{meetings.length} cuộc họp</span> đang diễn ra.</p>
+            <p className="text-slate-500 font-medium">Hôm nay hệ thống ghi nhận <span className="text-primary font-bold">{meetings.length} cuộc họp</span> trong kế hoạch.</p>
           </div>
           <button onClick={() => onNavigate(Page.CALENDAR)} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-6 py-3.5 rounded-2xl font-bold text-sm shadow-glow-blue hover:-translate-y-1 active:scale-95 transition-all">
             <span className="material-symbols-outlined text-[20px]">add</span> Đặt lịch họp mới
@@ -53,17 +58,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, onViewMeeti
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up">
-            <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-blue text-white flex items-center justify-center shadow-glow-blue"><span className="material-symbols-outlined text-[28px] fill">event_available</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cuộc họp tháng</p><h3 className="text-3xl font-black text-slate-800">128</h3></div></div>
-            <div className="text-xs font-bold text-emerald-500 flex items-center gap-1"><span className="material-symbols-outlined text-sm">trending_up</span> +12.5%</div>
+          <div onClick={() => onNavigate(Page.CALENDAR)} className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up cursor-pointer">
+            <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-blue text-white flex items-center justify-center shadow-glow-blue"><span className="material-symbols-outlined text-[28px] fill">event_available</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tổng cuộc họp</p><h3 className="text-3xl font-black text-slate-800">{meetings.length}</h3></div></div>
+            <div className="text-xs font-bold text-emerald-500 flex items-center gap-1"><span className="material-symbols-outlined text-sm">trending_up</span> Đang diễn ra</div>
           </div>
-          <div className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up">
-            <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-purple text-white flex items-center justify-center shadow-glow-purple"><span className="material-symbols-outlined text-[28px] fill">meeting_room</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Phòng bận</p><h3 className="text-3xl font-black text-slate-800">4 / 12</h3></div></div>
-            <div className="text-xs font-bold text-emerald-500">Hệ thống ổn định</div>
+          <div onClick={() => onNavigate(Page.ROOMS)} className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up cursor-pointer">
+            <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-purple text-white flex items-center justify-center shadow-glow-purple"><span className="material-symbols-outlined text-[28px] fill">meeting_room</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Trạng thái phòng</p><h3 className="text-3xl font-black text-slate-800">{busyRoomsCount} / {rooms.length}</h3></div></div>
+            <div className="text-xs font-bold text-slate-500">Phòng đang bận</div>
           </div>
-          <div className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up">
-            <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-orange text-white flex items-center justify-center shadow-glow-orange"><span className="material-symbols-outlined text-[28px] fill">folder_shared</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tài liệu mới</p><h3 className="text-3xl font-black text-slate-800">42</h3></div></div>
-            <div className="text-xs font-bold text-orange-500">12 chờ phê duyệt</div>
+          <div onClick={() => onNavigate(Page.DOCUMENTS)} className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up cursor-pointer">
+            <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-orange text-white flex items-center justify-center shadow-glow-orange"><span className="material-symbols-outlined text-[28px] fill">folder_shared</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tổng tài liệu</p><h3 className="text-3xl font-black text-slate-800">{documents.length}</h3></div></div>
+            <div className="text-xs font-bold text-orange-500">Đã đồng bộ</div>
           </div>
           <div className="group relative overflow-hidden bg-white p-6 rounded-[2rem] border border-slate-100 shadow-soft hover:shadow-soft-hover transition-all duration-500 animate-fade-in-up">
             <div className="flex items-center gap-4 mb-6"><div className="w-14 h-14 rounded-2xl card-gradient-emerald text-white flex items-center justify-center shadow-glow-emerald"><span className="material-symbols-outlined text-[28px] fill">schedule</span></div><div className="flex flex-col"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hiệu suất</p><h3 className="text-3xl font-black text-slate-800">94%</h3></div></div>
@@ -80,11 +85,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, onViewMeeti
           <div className="bg-white rounded-[2rem] border border-slate-100 shadow-soft p-8 animate-fade-in-up">
             <h3 className="text-xl font-bold text-slate-800 mb-6">Cuộc họp sắp tới</h3>
             <div className="space-y-4">
-               {meetings.map((meeting) => (
+               {meetings.slice(0, 4).map((meeting) => (
                  <div key={meeting.id} onClick={() => onViewMeeting?.(meeting)} className="group flex flex-col gap-3 p-5 rounded-[1.75rem] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-soft-hover transition-all cursor-pointer relative overflow-hidden">
                     <div className={`absolute top-0 left-0 bottom-0 w-1.5 bg-enterprise-${meeting.color || 'blue'}`}></div>
                     <div className="flex items-center justify-between w-full">
-                      <div className="flex flex-col gap-0.5"><h4 className="font-bold text-slate-800 text-[15px] truncate group-hover:text-primary transition-colors">{meeting.title}</h4><span className="text-[11px] font-bold text-slate-400">{new Date(meeting.startTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'})} • {meeting.roomId}</span></div>
+                      <div className="flex flex-col gap-0.5"><h4 className="font-bold text-slate-800 text-[15px] truncate group-hover:text-primary transition-colors">{meeting.title}</h4><span className="text-[11px] font-bold text-slate-400">{new Date(meeting.startTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'})} • {rooms.find(r => r.id === meeting.roomId)?.name || meeting.roomId}</span></div>
                       <span className="material-symbols-outlined text-slate-300 group-hover:text-primary">chevron_right</span>
                     </div>
                  </div>

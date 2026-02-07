@@ -36,7 +36,7 @@ const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pd
     return () => { isCancelled = true; };
   }, [pdfDoc, pageNum, scale]);
 
-  return <canvas ref={canvasRef} className="bg-white shadow-lg mb-6 rounded-sm" />;
+  return <canvas ref={canvasRef} className="bg-white w-full h-full object-contain" />;
 };
 
 interface MeetingDetailProps {
@@ -54,7 +54,6 @@ const dataPie = [
 const COLORS = ['#137fec', '#e2e8f0'];
 
 const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting, onBack }) => {
-  // Lấy tài liệu đầu tiên làm mặc định, nếu không có thì dùng trang báo cáo
   const availableDocs = meeting.documents || [];
   const reportDoc: any = { id: 'rep', name: 'Báo cáo phân tích hệ thống', type: 'report', size: 'N/A' };
   
@@ -67,6 +66,9 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const [aiResponse, setAiResponse] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
   
+  // State quản lý lật trang
+  const [currentPage, setCurrentPage] = useState(0);
+
   // States cho việc quản lý tài liệu
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
@@ -76,7 +78,26 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
 
-  // --- Handlers cho việc Quản lý Tài liệu ---
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') nextPage();
+      if (e.key === 'ArrowLeft') prevPage();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [numPages, currentPage]);
+
+  const nextPage = () => {
+    if (currentPage < numPages - 1) setCurrentPage(p => p + 1);
+    // Đối với fallback có 3 trang
+    if (isFallback && currentPage < 2) setCurrentPage(p => p + 1);
+  };
+
+  const prevPage = () => {
+    if (currentPage > 0) setCurrentPage(p => p - 1);
+  };
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
       const newFiles = Array.from(event.target.files).map((item) => {
@@ -97,7 +118,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
       };
       onUpdateMeeting(updatedMeeting);
       
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -108,11 +128,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
         const updatedDocs = (meeting.documents || []).filter(d => d.id !== docId);
         const updatedMeeting = { ...meeting, documents: updatedDocs };
         onUpdateMeeting(updatedMeeting);
-
-        // Nếu đang xem tài liệu bị xóa, quay về báo cáo
-        if (activeDoc.id === docId) {
-            setActiveDoc(reportDoc);
-        }
+        if (activeDoc.id === docId) setActiveDoc(reportDoc);
     }
   };
 
@@ -126,20 +142,15 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     e.stopPropagation();
     e.preventDefault();
     if (!editingDocId) return;
-
     const updatedDocs = (meeting.documents || []).map(d =>
         d.id === editingDocId ? { ...d, name: editName } : d
     );
     onUpdateMeeting({ ...meeting, documents: updatedDocs });
-    
-    // Cập nhật tên nếu đang xem tài liệu đó
     if (activeDoc.id === editingDocId) {
         setActiveDoc({ ...activeDoc, name: editName });
     }
-
     setEditingDocId(null);
   };
-  // ------------------------------------------
 
   const handleAiSummary = async () => {
     setAiLoading(true);
@@ -163,7 +174,8 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     setDocxHtml(null);
     setLoading(true);
     setIsFallback(false);
-    setZoom(1.0); // Reset zoom on doc change
+    setZoom(1.0);
+    setCurrentPage(0); // Reset về trang đầu khi đổi file
 
     if (activeDoc.type === 'report') {
       setIsFallback(false);
@@ -171,7 +183,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
       return;
     }
 
-    // Nếu tài liệu có URL thực (được upload từ máy), ta xử lý hiển thị chính xác
     if (activeDoc.url) {
       if (activeDoc.type === 'docx') {
         try {
@@ -187,7 +198,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
         }
       } else if (activeDoc.type === 'pdf') {
         try {
-          // Load PDF via PDF.js
           const loadingTask = pdfjsLib.getDocument(activeDoc.url);
           const pdf = await loadingTask.promise;
           setPdfDoc(pdf);
@@ -199,14 +209,13 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
            setLoading(false);
         }
       } else {
-        // Unsupported type fallback
         setLoading(false);
       }
     } else {
-      // Nếu là tài liệu mẫu (không có file thật), dùng giao diện Fallback
       setTimeout(() => {
         setIsFallback(true);
         setLoading(false);
+        setNumPages(3); // Giả lập 3 trang cho fallback
       }, 600);
     }
   };
@@ -215,38 +224,79 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     loadContent();
   }, [activeDoc]);
 
+  // Hiển thị Fallback 3D Flip
   const renderFallbackPDF = () => (
-    <div className="flex flex-col items-center gap-10 py-16 animate-in fade-in duration-700 origin-top" style={{ transform: `scale(${zoom})` }}>
-      {[1, 2, 3].map(page => (
-        <div key={page} className="w-full max-w-[850px] aspect-[1/1.414] bg-white shadow-2xl p-20 border border-slate-200 relative overflow-hidden flex flex-col">
-          <div className="flex justify-between items-start mb-12 border-b border-slate-100 pb-8">
-            <div className="flex items-center gap-4">
-               <div className="w-10 h-10 rounded-lg bg-primary text-white flex items-center justify-center font-black">P</div>
-               <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Paperless Meeting Cloud</div>
-            </div>
-            <div className="text-right">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trang {page} / 3</p>
-               <p className="text-[9px] font-bold text-slate-300">REF: {meeting.id}-{activeDoc.id}</p>
-            </div>
+    <div className="book-perspective relative w-[650px] h-[920px] shadow-2xl mt-8 transition-transform duration-500 origin-top" style={{ transform: `scale(${zoom})` }}>
+       {[0, 1, 2].map((pageIndex) => (
+          <div 
+            key={pageIndex} 
+            className={`book-page absolute inset-0 bg-white border border-slate-200 flex flex-col p-16 overflow-hidden shadow-md ${pageIndex < currentPage ? 'flipped' : ''}`}
+            style={{ zIndex: 3 - pageIndex }}
+          >
+              <div className="flex justify-between items-start mb-10 border-b border-slate-100 pb-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-primary text-white flex items-center justify-center font-black">P</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Paperless Meeting Cloud</div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trang {pageIndex + 1} / 3</p>
+                  <p className="text-[9px] font-bold text-slate-300">REF: {meeting.id}-{activeDoc.id}</p>
+                </div>
+              </div>
+
+              {pageIndex === 0 && (
+                <div className="flex-1 space-y-6 animate-fade-in-up">
+                  <h1 className="text-4xl font-black text-slate-900 mb-8 uppercase text-center tracking-tight leading-tight">{activeDoc.name}</h1>
+                  <p className="font-bold text-slate-900 text-center text-lg">Nội dung cuộc họp: {meeting.title}</p>
+                  <div className="flex justify-center my-12">
+                     <div className="w-32 h-1 bg-primary/20 rounded-full"></div>
+                  </div>
+                  <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100">
+                    <p className="text-xs font-bold text-primary mb-4 uppercase tracking-widest text-center">Thông tin xác thực</p>
+                    <div className="flex justify-between text-sm font-medium text-slate-600 px-4">
+                        <span>Chủ trì:</span>
+                        <span className="font-bold text-slate-900">{meeting.host}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-medium text-slate-600 px-4 mt-2">
+                        <span>Phòng họp:</span>
+                        <span className="font-bold text-slate-900">{meeting.roomId}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {pageIndex === 1 && (
+                <div className="flex-1 space-y-6 text-justify leading-loose text-slate-700 font-medium">
+                   <h3 className="text-xl font-bold text-slate-900 mb-4">I. Tổng quan vấn đề</h3>
+                   <p>Theo báo cáo đánh giá tác động kinh tế quý vừa qua, chúng ta nhận thấy sự tăng trưởng mạnh mẽ trong lĩnh vực chuyển đổi số. Tuy nhiên, các thách thức về bảo mật thông tin và quản lý tài nguyên vẫn cần được xem xét một cách nghiêm túc.</p>
+                   <p>Hệ thống Paperless Meeting được triển khai nhằm giải quyết các vấn đề tồn đọng trong quy trình tổ chức họp truyền thống, giúp tiết kiệm thời gian và chi phí in ấn.</p>
+                   <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100 mt-6">
+                      <p className="text-blue-800 italic font-serif">"Chuyển đổi số không chỉ là công nghệ, mà là sự thay đổi về tư duy quản trị."</p>
+                   </div>
+                </div>
+              )}
+
+              {pageIndex === 2 && (
+                <div className="flex-1 space-y-6">
+                   <h3 className="text-xl font-bold text-slate-900 mb-4">II. Kết luận và Chỉ đạo</h3>
+                   <ul className="list-decimal list-inside space-y-4 text-slate-700 font-medium">
+                      <li>Thống nhất phương án triển khai giai đoạn 2 của dự án.</li>
+                      <li>Yêu cầu các bộ phận liên quan hoàn tất báo cáo trước ngày 30 hàng tháng.</li>
+                      <li>Phê duyệt ngân sách bổ sung cho việc nâng cấp hạ tầng mạng Wifi 6 tại khu vực phòng họp VIP.</li>
+                   </ul>
+                   <div className="mt-20 flex flex-col items-end">
+                      <p className="text-sm font-bold text-slate-400 mb-4">Người phê duyệt</p>
+                      <div className="w-40 h-20 border-b-2 border-slate-200 mb-2"></div>
+                      <p className="font-bold text-slate-900">{meeting.host}</p>
+                   </div>
+                </div>
+              )}
+
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03] rotate-[-45deg] select-none z-0">
+                <span className="text-8xl font-black">CONFIDENTIAL</span>
+              </div>
           </div>
-          <div className="flex-1 space-y-6">
-            <h1 className="text-3xl font-black text-slate-900 mb-8 uppercase text-center tracking-tight">{activeDoc.name}</h1>
-            <p className="font-bold text-slate-900">Nội dung cuộc họp: {meeting.title}</p>
-            <p className="text-slate-700 text-sm leading-relaxed text-justify">Đây là văn bản được trích xuất từ hệ thống quản trị tài liệu tập trung. Nội dung bao gồm các quyết nghị quan trọng phục vụ cho phiên họp ngày {new Date(meeting.startTime).toLocaleDateString('vi-VN')}.</p>
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 my-8">
-               <p className="text-xs font-bold text-primary mb-2 uppercase tracking-widest">Thông tin phiên họp:</p>
-               <ul className="list-disc list-inside space-y-2 text-xs font-medium text-slate-500">
-                  <li>Chủ trì: {meeting.host}</li>
-                  <li>Phòng: {meeting.roomId}</li>
-                  <li>Số lượng tham gia: {meeting.participants} đại biểu</li>
-               </ul>
-            </div>
-          </div>
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03] rotate-[-45deg] select-none">
-             <span className="text-9xl font-black">CONFIDENTIAL</span>
-          </div>
-        </div>
-      ))}
+       ))}
     </div>
   );
 
@@ -254,6 +304,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     <div className="bg-[#f1f5f9] h-screen flex flex-col overflow-hidden relative font-display">
       <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.xlsx" multiple />
       
+      {/* Sidebar (Giữ nguyên) */}
       <aside className="fixed left-0 top-0 bottom-0 w-[340px] bg-white border-r border-slate-200 flex flex-col z-50 shadow-2xl">
         <div className="h-24 flex items-center justify-between px-6 border-b border-slate-100 bg-slate-50/50">
            <div className="flex items-center gap-3 overflow-hidden">
@@ -302,15 +353,9 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                   </>
                 )}
               </div>
-
-              {/* Action Buttons */}
               <div className={`flex items-center gap-1 ${editingDocId === doc.id ? 'hidden' : 'opacity-0 group-hover:opacity-100'} transition-opacity absolute right-2 bg-white/90 p-1 rounded-lg shadow-sm border border-slate-100`}>
-                <button onClick={(e) => startEdit(e, doc)} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-primary transition-colors" title="Đổi tên">
-                  <span className="material-symbols-outlined text-[16px]">edit</span>
-                </button>
-                <button onClick={(e) => handleDeleteDoc(e, doc.id)} className="p-1.5 hover:bg-rose-50 rounded-md text-slate-400 hover:text-rose-500 transition-colors" title="Xóa">
-                  <span className="material-symbols-outlined text-[16px]">delete</span>
-                </button>
+                <button onClick={(e) => startEdit(e, doc)} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-primary transition-colors" title="Đổi tên"><span className="material-symbols-outlined text-[16px]">edit</span></button>
+                <button onClick={(e) => handleDeleteDoc(e, doc.id)} className="p-1.5 hover:bg-rose-50 rounded-md text-slate-400 hover:text-rose-500 transition-colors" title="Xóa"><span className="material-symbols-outlined text-[16px]">delete</span></button>
               </div>
             </div>
           ))}
@@ -323,31 +368,64 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
       </header>
 
       <main className="ml-[340px] flex-1 flex flex-col bg-slate-200/50 overflow-hidden relative">
-        <div className="bg-white/90 border-b border-slate-200 h-14 flex items-center justify-center gap-8 px-10 z-30 shadow-sm shrink-0">
-           <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
-              <button onClick={() => setZoom(z => Math.max(0.3, z - 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">remove</span></button>
-              <span className="text-xs font-black min-w-[50px] text-center text-slate-700 select-none">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">add</span></button>
+        {/* Bottom Toolbar - Updated with Pagination Info Only */}
+        <div className="bg-white/90 border-b border-slate-200 h-16 flex items-center justify-between px-8 z-30 shadow-sm shrink-0 relative">
+           {/* Zoom Controls */}
+           <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
+                  <button onClick={() => setZoom(z => Math.max(0.3, z - 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">remove</span></button>
+                  <span className="text-xs font-black min-w-[50px] text-center text-slate-700 select-none">{Math.round(zoom * 100)}%</span>
+                  <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-slate-900 transition-colors"><span className="material-symbols-outlined">add</span></button>
+              </div>
+              <button onClick={() => setZoom(1.0)} className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">Reset</button>
            </div>
-           <button onClick={() => setZoom(1.0)} className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">Reset</button>
-           <div className="h-6 w-px bg-slate-200"></div>
+
+           {/* Pagination Info - Only for PDF or Fallback */}
+           {(activeDoc.type === 'pdf' || isFallback) && (
+              <div className="flex flex-col items-center absolute left-1/2 -translate-x-1/2">
+                  <span className="text-sm font-black text-slate-800">Trang {currentPage + 1}</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">/ {numPages || '...'}</span>
+              </div>
+           )}
+
            <button className="flex items-center gap-2 text-xs font-black text-slate-500 hover:text-primary transition-all uppercase tracking-widest"><span className="material-symbols-outlined text-[18px]">download</span> Tải xuống</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth p-10">
+        <div className="flex-1 overflow-hidden relative flex justify-center bg-slate-200/50">
+           {/* Floating Navigation Buttons */}
+           {!loading && (activeDoc.type === 'pdf' || isFallback) && (
+             <>
+               <button 
+                 onClick={prevPage} 
+                 disabled={currentPage === 0}
+                 className="absolute left-10 top-1/2 -translate-y-1/2 z-40 w-16 h-16 rounded-full bg-white/80 backdrop-blur-md border border-white/50 shadow-2xl text-slate-600 flex items-center justify-center hover:bg-primary hover:text-white hover:scale-110 transition-all disabled:opacity-0 disabled:pointer-events-none group active:scale-95"
+               >
+                 <span className="material-symbols-outlined text-4xl group-hover:-translate-x-1 transition-transform">chevron_left</span>
+               </button>
+
+               <button 
+                 onClick={nextPage} 
+                 disabled={currentPage >= (numPages - 1)}
+                 className="absolute right-10 top-1/2 -translate-y-1/2 z-40 w-16 h-16 rounded-full bg-white/80 backdrop-blur-md border border-white/50 shadow-2xl text-slate-600 flex items-center justify-center hover:bg-primary hover:text-white hover:scale-110 transition-all disabled:opacity-0 disabled:pointer-events-none group active:scale-95"
+               >
+                 <span className="material-symbols-outlined text-4xl group-hover:translate-x-1 transition-transform">chevron_right</span>
+               </button>
+             </>
+           )}
+
            {loading ? (
              <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
                <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
                <p className="font-black text-xs uppercase tracking-widest">Đang tải tài liệu...</p>
              </div>
            ) : (
-             <div className="flex flex-col items-center w-full min-h-full transition-all duration-200 ease-out">
+             <div className="w-full h-full flex items-start justify-center overflow-y-auto custom-scrollbar pt-8 pb-20">
                 {/* Fallback View */}
                 {isFallback && renderFallbackPDF()}
 
-                {/* Report View */}
+                {/* Report View - Giữ nguyên không lật trang */}
                 {!isFallback && activeDoc.id === 'rep' && (
-                  <div className="w-full max-w-4xl bg-white shadow-2xl rounded-[3rem] p-20 animate-in zoom-in-95 origin-top" style={{ transform: `scale(${zoom})` }}>
+                  <div className="w-full max-w-4xl bg-white shadow-2xl rounded-[3rem] p-20 animate-in zoom-in-95 origin-top mt-8" style={{ transform: `scale(${zoom})` }}>
                      <h1 className="text-4xl font-black mb-10 text-slate-900 tracking-tighter">Báo cáo Cuộc họp</h1>
                      <div className="grid grid-cols-2 gap-10">
                         <div className="h-64"><ResponsiveContainer><BarChart data={dataBar}><Bar dataKey="val" fill="#137fec" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div>
@@ -356,22 +434,32 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                   </div>
                 )}
 
-                {/* PDF View (Native Zoom) */}
+                {/* PDF View (Book Flip Mode) */}
                 {!isFallback && activeDoc.type === 'pdf' && pdfDoc && (
-                   <div className="flex flex-col items-center">
+                   <div className="book-perspective relative w-[650px] h-[920px] shadow-2xl mt-8 transition-transform duration-500 origin-top" style={{ transform: `scale(${zoom})` }}>
                      {Array.from(new Array(numPages), (el, index) => (
-                       <PdfPage key={`page_${index + 1}`} pdfDoc={pdfDoc} pageNum={index + 1} scale={zoom * 1.5} />
+                       <div 
+                          key={`page_${index}`} 
+                          className={`book-page absolute inset-0 bg-white shadow-md ${index < currentPage ? 'flipped' : ''}`}
+                          style={{ zIndex: numPages - index }}
+                        >
+                          <PdfPage pdfDoc={pdfDoc} pageNum={index + 1} scale={1.5} />
+                          {/* Số trang góc dưới */}
+                          <div className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-400 bg-white/80 px-2 py-1 rounded">
+                            {index + 1} / {numPages}
+                          </div>
+                       </div>
                      ))}
                    </div>
                 )}
                 
-                {/* DOCX View (CSS Zoom) */}
+                {/* DOCX View (Vẫn giữ cuộn dọc vì tính chất flow document) */}
                 {!isFallback && activeDoc.type === 'docx' && docxHtml && (
                    <div 
-                     className="bg-white shadow-2xl p-16 min-h-[1100px] docx-content-render origin-top"
+                     className="bg-white shadow-2xl p-16 min-h-[1100px] docx-content-render origin-top mt-8"
                      style={{ 
                        transform: `scale(${zoom})`, 
-                       width: '850px' // Fixed width for A4 consistency, scaled by CSS
+                       width: '850px'
                      }}
                      dangerouslySetInnerHTML={{ __html: docxHtml }} 
                    />
@@ -381,6 +469,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
         </div>
       </main>
 
+      {/* AI Assistant Panel (Giữ nguyên) */}
       {showAi && (
         <div className="fixed inset-y-0 right-0 w-[480px] bg-white shadow-2xl z-[100] border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-500">
           <div className="p-8 border-b flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center shadow-glow-blue"><span className="material-symbols-outlined fill">smart_toy</span></div><h3 className="font-black text-slate-900 text-lg">AI Assistant</h3></div><button onClick={() => setShowAi(false)} className="p-2 hover:bg-slate-100 rounded-full"><span className="material-symbols-outlined">close</span></button></div>

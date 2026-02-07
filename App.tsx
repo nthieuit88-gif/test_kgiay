@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Page, Meeting, MeetingDocument, Room } from './types';
+import { supabase } from './lib/supabaseClient';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Calendar from './pages/Calendar';
@@ -69,7 +70,7 @@ const App: React.FC = () => {
     { id: 'd3', name: 'Kế hoạch nhân sự 2024.pdf', size: '856KB', type: 'pdf' }
   ]);
 
-  // Danh sách cuộc họp đồng bộ với thời gian thực
+  // Danh sách cuộc họp ban đầu (Mock Data)
   const [meetings, setMeetings] = useState<Meeting[]>([
     { 
       id: '1', 
@@ -121,11 +122,70 @@ const App: React.FC = () => {
     }
   ]);
 
-  const addMeeting = (meeting: Meeting) => {
+  // Load meetings from Supabase on start
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      const { data, error } = await supabase
+        .from('meetings')
+        .select('*');
+
+      if (error) {
+        console.error('Error fetching meetings from Supabase:', error);
+      } else if (data) {
+        const fetchedMeetings: Meeting[] = data.map((m: any) => ({
+          id: m.id,
+          title: m.title,
+          startTime: m.start_time,
+          endTime: m.end_time,
+          roomId: m.room_id,
+          host: m.host,
+          participants: m.participants,
+          status: m.status as 'approved' | 'pending' | 'cancelled',
+          color: m.color as 'blue' | 'purple' | 'orange' | 'emerald',
+          documents: [] // Documents logic can be extended via Supabase Storage if needed
+        }));
+        
+        // Merge fetched meetings with initial mock data (avoiding duplicates by ID)
+        setMeetings(prev => {
+           const existingIds = new Set(prev.map(p => p.id));
+           const uniqueNewMeetings = fetchedMeetings.filter(m => !existingIds.has(m.id));
+           return [...prev, ...uniqueNewMeetings];
+        });
+      }
+    };
+
+    fetchMeetings();
+  }, []);
+
+  const addMeeting = async (meeting: Meeting) => {
+    // 1. Cập nhật giao diện ngay lập tức (Optimistic UI Update)
     setMeetings(prev => [...prev, meeting]);
-    // Nếu có tài liệu mới trong meeting, thêm vào kho tổng
     if (meeting.documents) {
       setAllDocuments(prev => [...prev, ...meeting.documents!]);
+    }
+
+    // 2. Lưu "đơn hàng" (Booking) vào Supabase Database
+    const { error } = await supabase
+      .from('meetings')
+      .insert([
+        {
+          id: meeting.id,
+          title: meeting.title,
+          start_time: meeting.startTime,
+          end_time: meeting.endTime,
+          room_id: meeting.roomId,
+          host: meeting.host,
+          participants: meeting.participants,
+          status: meeting.status,
+          color: meeting.color
+        }
+      ]);
+
+    if (error) {
+      console.error('Lỗi khi lưu vào Supabase:', error);
+      alert('Không thể lưu dữ liệu đặt lịch vào database: ' + error.message);
+    } else {
+      console.log('Đã lưu dữ liệu đặt lịch thành công vào Supabase');
     }
   };
 

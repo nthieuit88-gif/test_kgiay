@@ -1,10 +1,12 @@
 
 import React from 'react';
-import { Page, NavItemProps } from '../types';
+import { Page, NavItemProps, User } from '../types';
 
 interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
+  currentUser: User | null;
+  onLogout: () => void;
 }
 
 const getPageTheme = (page: Page) => {
@@ -18,60 +20,43 @@ const getPageTheme = (page: Page) => {
   }
 };
 
-const NavItem: React.FC<NavItemProps> = ({ page, currentPage, label, icon, filled, onClick, badge }) => {
+const NavItem: React.FC<NavItemProps> = ({ page, currentPage, label, icon, filled, onClick, badge, disabled }) => {
   const isActive = currentPage === page;
   const theme = getPageTheme(page);
 
   return (
     <button
-      onClick={() => onClick(page)}
+      onClick={() => !disabled && onClick(page)}
       className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 group relative overflow-hidden ${
         isActive
-          ? `${theme.active} text-white shadow-lg shadow-${theme.active}/20`
-          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+          ? `${theme.active} text-white shadow-lg`
+          : disabled ? 'opacity-40 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-50'
       }`}
     >
-      {!isActive && (
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-slate-200/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
-      )}
-      
-      <span className={`material-symbols-outlined transition-all duration-500 ${filled || isActive ? 'fill' : ''} 
-        ${isActive ? 'scale-110' : `${theme.color} group-hover:scale-125`}`}>
-        {icon}
+      <span className={`material-symbols-outlined transition-all ${filled || isActive ? 'fill' : ''} ${isActive ? 'scale-110' : theme.color}`}>
+        {disabled ? 'lock' : icon}
       </span>
-      
-      <span className={`text-[15px] transition-all duration-300 ${isActive ? 'font-bold' : 'font-semibold group-hover:translate-x-1'}`}>
+      <span className={`text-[15px] ${isActive ? 'font-bold' : 'font-semibold'}`}>
         {label}
       </span>
-
-      {badge !== undefined && (
-        <span
-          className={`ml-auto text-[10px] font-black px-2 py-0.5 rounded-full transition-colors ${
-            isActive
-              ? 'bg-white/30 text-white'
-              : `${theme.bg} ${theme.color}`
-          }`}
-        >
-          {badge}
-        </span>
-      )}
-      
-      {isActive && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white/40 rounded-l-full"></div>
+      {badge !== undefined && !disabled && (
+        <span className={`ml-auto text-[10px] font-black px-2 py-0.5 rounded-full ${isActive ? 'bg-white/30' : theme.bg + ' ' + theme.color}`}>{badge}</span>
       )}
     </button>
   );
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, currentUser, onLogout }) => {
+  const isAdmin = currentUser?.role === 'ADMIN';
+
   return (
     <aside className="w-72 bg-white border-r border-slate-200/60 flex flex-col justify-between shrink-0 z-30 hidden md:flex">
       <div className="flex flex-col">
         <div className="h-24 flex items-center gap-4 px-8 mb-4">
-          <div className="bg-gradient-to-br from-primary to-blue-600 p-2.5 rounded-[1.25rem] text-white shadow-glow-blue rotate-3 hover:rotate-0 transition-all duration-500 cursor-pointer">
+          <div className="bg-gradient-to-br from-primary to-blue-600 p-2.5 rounded-[1.25rem] text-white shadow-glow-blue rotate-3">
             <span className="material-symbols-outlined fill text-[28px]">layers</span>
           </div>
-          <div className="flex flex-col text-left">
+          <div className="flex flex-col">
             <h1 className="text-slate-900 text-2xl font-black leading-tight tracking-tight">PAPERLESS</h1>
             <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Enterprise Hub</p>
           </div>
@@ -85,22 +70,24 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
           
           <div className="my-6 mx-4 h-px bg-gradient-to-r from-transparent via-slate-100 to-transparent"></div>
           
-          <NavItem page={Page.SETTINGS} currentPage={currentPage} label="Cài đặt hệ thống" icon="settings" onClick={onNavigate} />
+          <NavItem 
+            page={Page.SETTINGS} 
+            currentPage={currentPage} 
+            label={isAdmin ? "Cài đặt hệ thống" : "Thông tin cá nhân"} 
+            icon={isAdmin ? "settings" : "account_circle"} 
+            onClick={onNavigate} 
+          />
         </nav>
       </div>
 
       <div className="p-6">
-        <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 group cursor-pointer hover:bg-white hover:shadow-soft-hover transition-all duration-500">
-          <div className="relative">
-            <div className="w-11 h-11 rounded-xl bg-slate-200 bg-cover bg-center shadow-inner group-hover:scale-105 transition-transform"
-              style={{ backgroundImage: "url('https://i.pravatar.cc/150?u=admin')" }}></div>
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-[3px] border-white rounded-full"></div>
-          </div>
+        <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 group">
+          <img src={currentUser?.avatar} className="w-11 h-11 rounded-xl bg-slate-200 object-cover" alt="User" />
           <div className="flex flex-col flex-1 overflow-hidden">
-            <p className="text-slate-900 text-[14px] font-bold truncate group-hover:text-primary transition-colors">Nguyễn Văn A</p>
-            <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider">Quản trị viên</p>
+            <p className="text-slate-900 text-[14px] font-bold truncate">{currentUser?.name}</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider">{isAdmin ? 'Quản trị viên' : 'Nhân viên'}</p>
           </div>
-          <button onClick={() => onNavigate(Page.LOGIN)} className="text-slate-300 hover:text-rose-500 transition-colors p-2 rounded-xl">
+          <button onClick={onLogout} className="text-slate-300 hover:text-rose-500 p-2">
             <span className="material-symbols-outlined text-[24px]">logout</span>
           </button>
         </div>

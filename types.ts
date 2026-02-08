@@ -9,6 +9,17 @@ export enum Page {
   MEETING_DETAIL = 'MEETING_DETAIL'
 }
 
+export type UserRole = 'ADMIN' | 'USER';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  dept: string;
+  avatar: string;
+}
+
 export interface NavItemProps {
   page: Page;
   currentPage: Page;
@@ -17,6 +28,7 @@ export interface NavItemProps {
   filled?: boolean;
   onClick: (page: Page) => void;
   badge?: number;
+  disabled?: boolean;
 }
 
 export interface Room {
@@ -35,15 +47,15 @@ export interface MeetingDocument {
   name: string;
   size: string;
   type: string;
-  file?: File; // File object thực tế
-  url?: string; // Blob URL để preview
+  file?: File;
+  url?: string;
 }
 
 export interface Meeting {
   id: string;
   title: string;
-  startTime: string; // ISO String
-  endTime: string;   // ISO String
+  startTime: string;
+  endTime: string;
   roomId: string;
   host: string;
   participants: number;

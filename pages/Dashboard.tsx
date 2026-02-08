@@ -9,6 +9,7 @@ interface DashboardProps {
     rooms: Room[];
     documents: MeetingDocument[];
     onViewMeeting?: (meeting: Meeting) => void;
+    isAdmin: boolean;
 }
 
 const data = [
@@ -20,8 +21,7 @@ const data = [
   { name: 'Thứ 7', meetings: 2, hours: 4 },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, rooms, documents, onViewMeeting }) => {
-  // Tính toán số liệu thực tế
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, rooms, documents, onViewMeeting, isAdmin }) => {
   const busyRoomsCount = rooms.filter(r => r.status === 'busy').length;
   
   return (
@@ -40,8 +40,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, rooms, docu
           </button>
           <div className="h-6 w-px bg-slate-200 mx-2"></div>
           <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-2xl hover:bg-white hover:shadow-soft transition-all cursor-pointer">
-             <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">AD</div>
-             <span className="text-xs font-bold text-slate-700">Enterprise Admin</span>
+             <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                {isAdmin ? 'AD' : 'US'}
+             </div>
+             <span className="text-xs font-bold text-slate-700">{isAdmin ? 'Enterprise Admin' : 'Enterprise User'}</span>
           </div>
         </div>
       </header>
@@ -49,12 +51,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, meetings, rooms, docu
       <div className="p-8 max-w-[1600px] mx-auto space-y-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 animate-fade-in-up">
           <div className="space-y-1">
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Xin chào, Quản trị viên!</h1>
+            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Xin chào, {isAdmin ? 'Quản trị viên' : 'Thành viên'}!</h1>
             <p className="text-slate-500 font-medium">Hôm nay hệ thống ghi nhận <span className="text-primary font-bold">{meetings.length} cuộc họp</span> trong kế hoạch.</p>
           </div>
-          <button onClick={() => onNavigate(Page.CALENDAR)} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-6 py-3.5 rounded-2xl font-bold text-sm shadow-glow-blue hover:-translate-y-1 active:scale-95 transition-all">
-            <span className="material-symbols-outlined text-[20px]">add</span> Đặt lịch họp mới
-          </button>
+          {isAdmin && (
+            <button onClick={() => onNavigate(Page.CALENDAR)} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-6 py-3.5 rounded-2xl font-bold text-sm shadow-glow-blue hover:-translate-y-1 active:scale-95 transition-all">
+              <span className="material-symbols-outlined text-[20px]">add</span> Đặt lịch họp mới
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

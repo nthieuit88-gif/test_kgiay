@@ -44,7 +44,7 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>(Page.LOGIN);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
-  const [rooms] = useState<Room[]>(INITIAL_ROOMS);
+  const [rooms, setRooms] = useState<Room[]>(INITIAL_ROOMS);
   const [allDocuments, setAllDocuments] = useState<MeetingDocument[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
 
@@ -82,6 +82,30 @@ const App: React.FC = () => {
     setCurrentPage(Page.LOGIN);
   };
 
+  const handleAddRoom = (newRoom: Room) => {
+    setRooms([...rooms, newRoom]);
+  };
+
+  const handleUpdateRoom = (updatedRoom: Room) => {
+    setRooms(rooms.map(r => r.id === updatedRoom.id ? updatedRoom : r));
+  };
+
+  const handleDeleteRoom = (roomId: string) => {
+    setRooms(rooms.filter(r => r.id !== roomId));
+  };
+
+  const handleAddMeeting = (meeting: Meeting) => {
+    setMeetings([...meetings, meeting]);
+  };
+
+  const handleUpdateMeeting = (updatedMeeting: Meeting) => {
+    setMeetings(meetings.map(m => m.id === updatedMeeting.id ? updatedMeeting : m));
+  };
+
+  const handleDeleteMeeting = (meetingId: string) => {
+    setMeetings(meetings.filter(m => m.id !== meetingId));
+  };
+
   const renderPage = () => {
     if (!currentUser) return null;
     const isAdmin = currentUser.role === 'ADMIN';
@@ -90,9 +114,20 @@ const App: React.FC = () => {
       case Page.DASHBOARD:
         return <Dashboard onNavigate={setCurrentPage} meetings={meetings} rooms={rooms} documents={allDocuments} onViewMeeting={(m) => { setSelectedMeeting(m); setCurrentPage(Page.MEETING_DETAIL); }} isAdmin={isAdmin} />;
       case Page.CALENDAR:
-        return <Calendar meetings={meetings} rooms={rooms} onAddMeeting={(m) => setMeetings([...meetings, m])} onUpdateMeeting={(m) => setMeetings(meetings.map(x => x.id === m.id ? m : x))} isAdmin={isAdmin} />;
+        return <Calendar meetings={meetings} rooms={rooms} onAddMeeting={handleAddMeeting} onUpdateMeeting={handleUpdateMeeting} isAdmin={isAdmin} />;
       case Page.ROOMS:
-        return <RoomManagement meetings={meetings} rooms={rooms} onAddMeeting={(m) => setMeetings([...meetings, m])} onViewMeeting={(m) => { setSelectedMeeting(m); setCurrentPage(Page.MEETING_DETAIL); }} isAdmin={isAdmin} />;
+        return <RoomManagement 
+          meetings={meetings} 
+          rooms={rooms} 
+          onAddMeeting={handleAddMeeting}
+          onUpdateMeeting={handleUpdateMeeting}
+          onDeleteMeeting={handleDeleteMeeting}
+          onViewMeeting={(m) => { setSelectedMeeting(m); setCurrentPage(Page.MEETING_DETAIL); }} 
+          isAdmin={isAdmin}
+          onAddRoom={handleAddRoom}
+          onUpdateRoom={handleUpdateRoom}
+          onDeleteRoom={handleDeleteRoom}
+        />;
       case Page.DOCUMENTS:
         return <Documents initialDocs={allDocuments} onUpdateDocs={setAllDocuments} isAdmin={isAdmin} />;
       case Page.SETTINGS:
@@ -107,7 +142,7 @@ const App: React.FC = () => {
   }
 
   if (currentPage === Page.MEETING_DETAIL && selectedMeeting) {
-    return <MeetingDetail meeting={selectedMeeting} onUpdateMeeting={(m) => setMeetings(meetings.map(x => x.id === m.id ? m : x))} onBack={() => setCurrentPage(Page.DASHBOARD)} isAdmin={currentUser?.role === 'ADMIN'} />;
+    return <MeetingDetail meeting={selectedMeeting} onUpdateMeeting={handleUpdateMeeting} onBack={() => setCurrentPage(Page.DASHBOARD)} isAdmin={currentUser?.role === 'ADMIN'} />;
   }
 
   return (

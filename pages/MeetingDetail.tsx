@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
@@ -267,13 +266,18 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
       if (!activeDoc.url) throw new Error("Đường dẫn tệp không tồn tại.");
 
       let fetchUrl = activeDoc.url;
-      // Handle potential encoding issues for Supabase URLs
-      if (!fetchUrl.startsWith('blob:') && !fetchUrl.includes('%')) {
-          try {
+      
+      // Use URL object to handle encoding correctly even for mixed content (encoded/unencoded parts)
+      if (fetchUrl.startsWith('http')) {
+        try {
+           fetchUrl = new URL(fetchUrl).href;
+        } catch (e) {
+           console.warn("Invalid URL format, attempting fallback", e);
+           // Fallback to encodeURI only if it doesn't look like it has encoded chars
+           if (!fetchUrl.includes('%')) {
              fetchUrl = encodeURI(fetchUrl);
-          } catch (e) {
-             console.warn("Could not encode URL", e);
-          }
+           }
+        }
       }
 
       if (activeDoc.type === 'pdf') {
@@ -288,6 +292,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
             throw new Error(`Không thể tải tệp tin (HTTP ${response.status})`);
           }
           const arrayBuffer = await response.arrayBuffer();
+          // Verify ZIP header (PK)
           const arr = new Uint8Array(arrayBuffer).subarray(0, 2);
           if (arr[0] !== 0x50 || arr[1] !== 0x4B) {
              throw new Error("File không đúng định dạng DOCX (Invalid ZIP header)");

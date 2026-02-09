@@ -221,4 +221,61 @@ const Calendar: React.FC<CalendarProps> = ({ meetings, rooms, onAddMeeting, onUp
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Ngày họp</label>
-                  <input type="date" required value={bookingForm.date} onChange={e => setBookingForm({...bookingForm, date: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2
+                  <input type="date" required value={bookingForm.date} onChange={e => setBookingForm({...bookingForm, date: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Phòng họp</label>
+                  <select value={bookingForm.roomId} onChange={e => setBookingForm({...bookingForm, roomId: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all">
+                    {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Bắt đầu</label>
+                  <input type="time" required value={bookingForm.startTime} onChange={e => setBookingForm({...bookingForm, startTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Kết thúc</label>
+                  <input type="time" required value={bookingForm.endTime} onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})} className="w-full bg-slate-50 border-slate-200 rounded-2xl px-4 py-3.5 focus:ring-4 focus:ring-primary/10 focus:border-primary font-bold text-slate-800 transition-all" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Tài liệu đính kèm ({bookingForm.files.length}/10)</label>
+                </div>
+                <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 hover:border-primary hover:bg-primary/5 rounded-2xl p-8 cursor-pointer flex flex-col items-center gap-2 transition-all group">
+                   <span className="material-symbols-outlined text-[32px] text-slate-300 group-hover:text-primary transition-colors">cloud_upload</span>
+                   <span className="text-xs font-bold text-slate-500">Tải lên tài liệu họp (PDF, Docx, ...)</span>
+                   <input type="file" ref={fileInputRef} multiple onChange={handleFileChange} className="hidden" accept=".pdf,.docx,.xlsx" />
+                </div>
+                {bookingForm.files.length > 0 && (
+                   <div className="grid grid-cols-1 gap-2 mt-4">
+                      {bookingForm.files.map((file, idx) => (
+                         <div key={idx} className="flex items-center justify-between bg-slate-50 px-4 py-3 rounded-xl border border-slate-100">
+                            <div className="flex items-center gap-3">
+                               <span className="material-symbols-outlined text-primary text-[18px]">description</span>
+                               <span className="text-xs font-bold text-slate-700 truncate max-w-[250px]">{file.name}</span>
+                            </div>
+                            <button type="button" onClick={() => removeFile(idx)} className="text-slate-300 hover:text-rose-500 transition-colors"><span className="material-symbols-outlined text-[18px]">close</span></button>
+                         </div>
+                      ))}
+                   </div>
+                )}
+              </div>
+
+              <div className="flex gap-4 pt-6 border-t border-slate-100 shrink-0">
+                <button type="button" onClick={() => setShowBookingModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Hủy bỏ</button>
+                <button type="submit" className="flex-1 py-4 rounded-2xl bg-primary text-white font-black text-xs uppercase tracking-widest shadow-glow-blue hover:bg-blue-600 transition-all">Xác nhận lịch</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+};
+
+export default Calendar;

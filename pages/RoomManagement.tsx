@@ -5,16 +5,16 @@ import { Room, Meeting, MeetingDocument } from '../types';
 interface RoomManagementProps {
   onAddMeeting: (meeting: Meeting) => void;
   meetings: Meeting[];
-  rooms: Room[]; // Nhận rooms từ props
+  rooms: Room[]; 
   onViewMeeting?: (meeting: Meeting) => void;
+  isAdmin: boolean;
 }
 
-const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings, rooms, onViewMeeting }) => {
+const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings, rooms, onViewMeeting, isAdmin }) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Lọc các cuộc họp của "Tôi"
   const myMeetings = meetings
     .filter(m => m.host.includes('Tôi') || m.host === 'Nguyễn Văn A')
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -29,6 +29,7 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
   });
 
   const handleOpenBooking = (room: Room) => {
+    if (!isAdmin) return;
     setSelectedRoom(room);
     setBookingForm({
       title: '',
@@ -62,7 +63,7 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
 
   const handleBookingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRoom) return;
+    if (!selectedRoom || !isAdmin) return;
 
     const attachedDocs: MeetingDocument[] = bookingForm.files.map(f => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -109,10 +110,9 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
       <div className="p-8 max-w-[1600px] mx-auto space-y-8">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Danh sách Phòng</h1>
-          <p className="text-slate-500 font-medium">Đặt phòng nhanh chóng cho cuộc họp tiếp theo của bạn.</p>
+          <p className="text-slate-500 font-medium">Lựa chọn phòng họp phù hợp với nhu cầu của bạn.</p>
         </div>
 
-        {/* Danh sách phòng dạng Grid Compact */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {rooms.map((room) => {
             const isBusy = room.status === 'busy' || meetings.some(m => m.roomId === room.id && new Date(m.startTime).toDateString() === new Date().toDateString());
@@ -148,22 +148,23 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
                      {room.amenities.slice(0,3).map(am => <span key={am} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{am}</span>)}
                   </div>
 
-                  <div className="mt-auto pt-3 border-t border-slate-50 flex justify-end">
-                    <button 
-                      onClick={() => handleOpenBooking(room)}
-                      disabled={isBusy}
-                      className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${isBusy ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600 shadow-glow-blue active:scale-95'}`}
-                    >
-                      {isBusy ? 'Đã kín' : <><span className="material-symbols-outlined text-[16px]">add</span> Đặt phòng</>}
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div className="mt-auto pt-3 border-t border-slate-50 flex justify-end">
+                      <button 
+                        onClick={() => handleOpenBooking(room)}
+                        disabled={isBusy}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${isBusy ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600 shadow-glow-blue active:scale-95'}`}
+                      >
+                        {isBusy ? 'Đã kín' : <><span className="material-symbols-outlined text-[16px]">add</span> Đặt phòng</>}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Khu vực vCard Lịch họp của bạn - Horizontal Scroll */}
         {myMeetings.length > 0 && (
           <div className="pt-6 border-t border-slate-200 animate-in fade-in slide-in-from-bottom-6 duration-700">
              <div className="flex items-center justify-between mb-4">
@@ -214,8 +215,7 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
         )}
       </div>
 
-      {/* Booking Modal */}
-      {showBookingModal && selectedRoom && (
+      {showBookingModal && selectedRoom && isAdmin && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-[2rem] w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -269,16 +269,6 @@ const RoomManagement: React.FC<RoomManagementProps> = ({ onAddMeeting, meetings,
                    <span className="text-xs font-bold text-slate-500">Tải lên (PDF, Docx)</span>
                    <input type="file" ref={fileInputRef} multiple onChange={handleFileChange} className="hidden" accept=".pdf,.docx,.xlsx,.pptx" />
                 </div>
-                {bookingForm.files.length > 0 && (
-                   <div className="grid grid-cols-1 gap-1 max-h-24 overflow-y-auto custom-scrollbar">
-                      {bookingForm.files.map((file, idx) => (
-                         <div key={idx} className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg">
-                            <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">{file.name}</span>
-                            <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-rose-500"><span className="material-symbols-outlined text-[16px]">close</span></button>
-                         </div>
-                      ))}
-                   </div>
-                )}
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-100">

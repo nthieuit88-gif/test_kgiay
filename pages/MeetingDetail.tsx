@@ -101,14 +101,13 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const [docxContent, setDocxContent] = useState<string>('');
 
   const fetchRepositoryDocs = async () => {
-      // Fetch documents that are NOT in the current meeting
-      // In a real scenario, this logic might be more complex (e.g., fetch all from library)
+      // Fetch documents (simulating a repository fetch)
+      // We check for documents that are NOT in the current meeting (by checking URL duplication to avoid same file appearing)
       const { data } = await supabase.from('documents').select('*').order('created_at', { ascending: false });
       if (data) {
-          const currentDocIds = new Set(availableDocs.map(d => d.name)); // Filter by name to avoid duplicates logically
-          // Only show docs that don't have the same name as existing ones in this meeting
-          // Or if you want to show all, just setRepositoryDocs(data);
-          const filtered = data.filter((d: any) => d.meeting_id !== meeting.id); 
+          const currentUrls = new Set(availableDocs.map(d => d.url));
+          // Filter out docs that have the same URL as existing docs in this meeting
+          const filtered = data.filter((d: any) => !currentUrls.has(d.url)); 
           setRepositoryDocs(filtered);
       }
   };
@@ -125,12 +124,14 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
       setIsLinking(true);
       try {
           const docsToLink = repositoryDocs.filter(d => selectedRepoDocs.includes(d.id));
+          
+          // Clone metadata to link to this meeting
           const newDocsPayload = docsToLink.map(d => ({
               name: d.name,
               size: d.size,
               type: d.type,
-              url: d.url,
-              meeting_id: meeting.id // Clone/Link to this meeting
+              url: d.url, // Keep same URL
+              meeting_id: meeting.id 
           }));
 
           const { data, error } = await supabase.from('documents').insert(newDocsPayload).select();

@@ -89,10 +89,78 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const [editName, setEditName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
+  // State for Add Document Modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [repositoryDocs, setRepositoryDocs] = useState<MeetingDocument[]>([]);
+  const [selectedRepoDocs, setSelectedRepoDocs] = useState<string[]>([]);
+  const [isLinking, setIsLinking] = useState(false);
+
   // State for Viewers
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
   const [docxContent, setDocxContent] = useState<string>('');
+
+  const fetchRepositoryDocs = async () => {
+      // Fetch documents that are NOT in the current meeting
+      // In a real scenario, this logic might be more complex (e.g., fetch all from library)
+      const { data } = await supabase.from('documents').select('*').order('created_at', { ascending: false });
+      if (data) {
+          const currentDocIds = new Set(availableDocs.map(d => d.name)); // Filter by name to avoid duplicates logically
+          // Only show docs that don't have the same name as existing ones in this meeting
+          // Or if you want to show all, just setRepositoryDocs(data);
+          const filtered = data.filter((d: any) => d.meeting_id !== meeting.id); 
+          setRepositoryDocs(filtered);
+      }
+  };
+
+  useEffect(() => {
+      if (showAddModal) {
+          fetchRepositoryDocs();
+          setSelectedRepoDocs([]);
+      }
+  }, [showAddModal]);
+
+  const handleLinkDocuments = async () => {
+      if (selectedRepoDocs.length === 0) return;
+      setIsLinking(true);
+      try {
+          const docsToLink = repositoryDocs.filter(d => selectedRepoDocs.includes(d.id));
+          const newDocsPayload = docsToLink.map(d => ({
+              name: d.name,
+              size: d.size,
+              type: d.type,
+              url: d.url,
+              meeting_id: meeting.id // Clone/Link to this meeting
+          }));
+
+          const { data, error } = await supabase.from('documents').insert(newDocsPayload).select();
+          
+          if (error) throw error;
+
+          if (data) {
+              const updatedMeeting = { ...meeting, documents: [...availableDocs, ...data] };
+              onUpdateMeeting(updatedMeeting);
+              // If currently viewing report, switch to first new doc
+              if (activeDoc.id === 'rep' && data.length > 0) {
+                  setActiveDoc(data[0]);
+              }
+              setShowAddModal(false);
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Lỗi khi thêm tài liệu từ kho.");
+      } finally {
+          setIsLinking(false);
+      }
+  };
+
+  const toggleRepoDocSelection = (id: string) => {
+      if (selectedRepoDocs.includes(id)) {
+          setSelectedRepoDocs(selectedRepoDocs.filter(d => d !== id));
+      } else {
+          setSelectedRepoDocs([...selectedRepoDocs, id]);
+      }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!isAdmin) return;
@@ -101,7 +169,6 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     setIsUploading(true);
     const newDocs: MeetingDocument[] = [];
     try {
-        // Upsert meeting info first to ensure it exists
         await supabase.from('meetings').upsert({
             id: meeting.id, title: meeting.title, start_time: meeting.startTime,
             end_time: meeting.endTime, room_id: meeting.roomId, host: meeting.host,
@@ -126,6 +193,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
             const updatedMeeting = { ...meeting, documents: [...(meeting.documents || []), ...newDocs] };
             onUpdateMeeting(updatedMeeting);
             setActiveDoc(newDocs[0]);
+            setShowAddModal(false); // Close modal if open
         }
     } catch (e) {
       console.error(e);
@@ -197,19 +265,28 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     try {
       if (!activeDoc.url) throw new Error("Đường dẫn tệp không tồn tại.");
 
+      let fetchUrl = activeDoc.url;
+      // Handle potential encoding issues for Supabase URLs
+      if (!fetchUrl.startsWith('blob:') && !fetchUrl.includes('%')) {
+          try {
+             fetchUrl = encodeURI(fetchUrl);
+          } catch (e) {
+             console.warn("Could not encode URL", e);
+          }
+      }
+
       if (activeDoc.type === 'pdf') {
           if (!pdfjsLib) throw new Error("Thư viện PDF chưa tải xong.");
-          const loadingTask = pdfjsLib.getDocument(activeDoc.url);
+          const loadingTask = pdfjsLib.getDocument(fetchUrl);
           const pdf = await loadingTask.promise;
           setPdfDoc(pdf); 
           setNumPages(pdf.numPages);
       } else if (activeDoc.type === 'docx' && mammoth) {
-          const response = await fetch(activeDoc.url);
+          const response = await fetch(fetchUrl);
           if (!response.ok) {
             throw new Error(`Không thể tải tệp tin (HTTP ${response.status})`);
           }
           const arrayBuffer = await response.arrayBuffer();
-          // Verify if arrayBuffer is likely a zip (Starts with PK)
           const arr = new Uint8Array(arrayBuffer).subarray(0, 2);
           if (arr[0] !== 0x50 || arr[1] !== 0x4B) {
              throw new Error("File không đúng định dạng DOCX (Invalid ZIP header)");
@@ -229,7 +306,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
        if (error.message.includes("Can't find end of central directory")) {
           message = "Tệp DOCX bị lỗi hoặc không đúng định dạng.";
        } else if (error.message.includes("HTTP")) {
-          message = "Không thể kết nối đến tệp tin.";
+          message = error.message;
        } else {
           message = error.message;
        }
@@ -260,7 +337,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
              </div>
            </div>
            {isAdmin && (
-             <button onClick={() => !isUploading && fileInputRef.current?.click()} className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl shadow-glow-blue hover:bg-blue-600 transition-all active:scale-95 disabled:opacity-50">
+             <button onClick={() => setShowAddModal(true)} className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl shadow-glow-blue hover:bg-blue-600 transition-all active:scale-95 disabled:opacity-50">
                 {isUploading ? <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span> : <span className="material-symbols-outlined text-[20px]">add</span>}
              </button>
            )}
@@ -384,6 +461,90 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
            )}
         </div>
       </main>
+
+       {/* Add Document Modal */}
+       {showAddModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white rounded-[2rem] w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[85vh]">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+                       <span className="material-symbols-outlined text-[24px]">library_add</span>
+                    </div>
+                    <div>
+                       <h2 className="text-lg font-black text-slate-900">Thêm tài liệu</h2>
+                       <p className="text-xs text-slate-500 font-bold">Tải lên hoặc chọn từ kho tài liệu chung</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><span className="material-symbols-outlined text-slate-400">close</span></button>
+              </div>
+              
+              <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                 {/* Option 1: Upload New */}
+                 <div onClick={() => fileInputRef.current?.click()} className="group border-2 border-dashed border-slate-200 hover:border-primary hover:bg-primary/5 rounded-2xl p-6 cursor-pointer flex items-center gap-4 transition-all">
+                     <div className="w-12 h-12 rounded-full bg-slate-50 group-hover:bg-white group-hover:shadow-md flex items-center justify-center transition-all">
+                        <span className="material-symbols-outlined text-slate-400 group-hover:text-primary">cloud_upload</span>
+                     </div>
+                     <div>
+                        <h3 className="font-bold text-slate-800 text-sm group-hover:text-primary transition-colors">Tải lên tài liệu mới</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Hỗ trợ PDF, Word, Excel (Max 50MB)</p>
+                     </div>
+                     <span className="material-symbols-outlined ml-auto text-slate-300 group-hover:text-primary">arrow_forward</span>
+                 </div>
+
+                 <div className="flex items-center gap-4">
+                    <div className="h-px bg-slate-100 flex-1"></div>
+                    <span className="text-[10px] font-black uppercase text-slate-300 tracking-widest">Hoặc chọn từ kho</span>
+                    <div className="h-px bg-slate-100 flex-1"></div>
+                 </div>
+
+                 {/* Option 2: Select from Repository */}
+                 <div className="space-y-3">
+                    <h3 className="font-bold text-slate-800 text-sm">Kho tài liệu sẵn có</h3>
+                    {repositoryDocs.length === 0 ? (
+                        <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-100">
+                            <span className="material-symbols-outlined text-slate-300 text-4xl mb-2">folder_off</span>
+                            <p className="text-xs font-bold text-slate-400">Không tìm thấy tài liệu nào khác trong kho.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                            {repositoryDocs.map(doc => (
+                                <div 
+                                    key={doc.id} 
+                                    onClick={() => toggleRepoDocSelection(doc.id)}
+                                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedRepoDocs.includes(doc.id) ? 'bg-primary/5 border-primary shadow-sm' : 'bg-white border-slate-100 hover:border-slate-300'}`}
+                                >
+                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${selectedRepoDocs.includes(doc.id) ? 'bg-primary border-primary' : 'bg-white border-slate-300'}`}>
+                                        {selectedRepoDocs.includes(doc.id) && <span className="material-symbols-outlined text-white text-[14px]">check</span>}
+                                    </div>
+                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                                        <span className="material-symbols-outlined text-[18px]">description</span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-bold text-slate-800 truncate">{doc.name}</p>
+                                        <p className="text-[10px] text-slate-400 font-medium">{doc.size} • {new Date().toLocaleDateString('vi-VN')}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                 </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                 <button onClick={() => setShowAddModal(false)} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-200 transition-all text-xs">Hủy bỏ</button>
+                 <button 
+                    onClick={handleLinkDocuments}
+                    disabled={selectedRepoDocs.length === 0 || isLinking}
+                    className={`px-8 py-3 rounded-xl font-bold text-white text-xs transition-all flex items-center gap-2 ${selectedRepoDocs.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-primary hover:bg-blue-600 shadow-glow-blue'}`}
+                 >
+                    {isLinking ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span> : <span className="material-symbols-outlined text-[16px]">add_link</span>}
+                    Thêm {selectedRepoDocs.length > 0 ? `${selectedRepoDocs.length} tài liệu` : ''}
+                 </button>
+              </div>
+           </div>
+        </div>
+       )}
 
        {/* AI Modal Overlay */}
        {showAi && (

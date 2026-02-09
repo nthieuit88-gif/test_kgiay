@@ -6,6 +6,12 @@ import { Meeting, MeetingDocument } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
+const mammoth = (window as any).mammoth;
+
+// Ensure worker is set if not already
+if (pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
 
 const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pdfDoc, pageNum, scale }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -14,18 +20,32 @@ const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pd
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
     let isCancelled = false;
-    pdfDoc.getPage(pageNum).then((page: any) => {
-      if (isCancelled) return;
-      const viewport = page.getViewport({ scale });
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      const renderContext = { canvasContext: context, viewport: viewport };
-      const renderTask = page.render(renderContext);
-      renderTask.promise.then(() => { if (!isCancelled) setIsRendered(true); });
-    });
+    
+    const renderPage = async () => {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        if (isCancelled) return;
+        
+        const viewport = page.getViewport({ scale });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        const renderContext = { canvasContext: context, viewport: viewport };
+        await page.render(renderContext).promise;
+        
+        if (!isCancelled) setIsRendered(true);
+      } catch (error) {
+        console.error("Error rendering page", pageNum, error);
+      }
+    };
+
+    renderPage();
     return () => { isCancelled = true; };
   }, [pdfDoc, pageNum, scale]);
 
@@ -33,7 +53,7 @@ const PdfPage: React.FC<{ pdfDoc: any, pageNum: number, scale: number }> = ({ pd
     <div className="relative bg-white shadow-md mb-8 mx-auto transition-shadow hover:shadow-xl">
       <canvas ref={canvasRef} className="block mx-auto" />
       {!isRendered && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-50">
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-50 border border-slate-100">
           <span className="material-symbols-outlined animate-spin text-slate-300">progress_activity</span>
         </div>
       )}
@@ -62,13 +82,17 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
   const [showAi, setShowAi] = useState(false);
   const [aiResponse, setAiResponse] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  
+  // State for Viewers
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
+  const [docxContent, setDocxContent] = useState<string>('');
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!isAdmin) return;
@@ -77,11 +101,13 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     setIsUploading(true);
     const newDocs: MeetingDocument[] = [];
     try {
+        // Upsert meeting info first to ensure it exists
         await supabase.from('meetings').upsert({
             id: meeting.id, title: meeting.title, start_time: meeting.startTime,
             end_time: meeting.endTime, room_id: meeting.roomId, host: meeting.host,
             participants: meeting.participants, status: meeting.status, color: meeting.color
         });
+        
         for (const file of Array.from(files) as File[]) {
             const fileExt = file.name.split('.').pop()?.toLowerCase() || 'file';
             const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}.${fileExt}`;
@@ -101,6 +127,9 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
             onUpdateMeeting(updatedMeeting);
             setActiveDoc(newDocs[0]);
         }
+    } catch (e) {
+      console.error(e);
+      alert("Lỗi tải lên tệp.");
     } finally {
         setIsUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -146,30 +175,74 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
     setAiLoading(true); setShowAi(true); setAiResponse("");
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Hãy tóm tắt tài liệu: ${activeDoc.name}.` });
-      setAiResponse(response.text || "");
+      const prompt = `Hãy tóm tắt nội dung chính của tài liệu có tên: "${activeDoc.name}".`;
+      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+      setAiResponse(response.text || "Không thể tạo tóm tắt.");
     } catch {
-      setAiResponse("AI Assistant đang bận. Vui lòng thử lại sau.");
+      setAiResponse("AI Assistant đang bận hoặc gặp lỗi kết nối. Vui lòng thử lại sau.");
     } finally { setAiLoading(false); }
   };
 
   const loadContent = async () => {
-    setPdfDoc(null); setNumPages(0); setLoading(true); setZoom(1.0);
+    setPdfDoc(null); 
+    setNumPages(0); 
+    setDocxContent(''); 
+    setErrorMsg(null);
+    setLoading(true); 
+    setZoom(1.0);
+
     if (activeDoc.type === 'report') { setLoading(false); return; }
-    if (['docx', 'xlsx', 'pptx'].includes(activeDoc.type)) { setLoading(false); return; }
-    if (activeDoc.url && activeDoc.type === 'pdf') {
-        try {
+    if (['xlsx', 'pptx'].includes(activeDoc.type)) { setLoading(false); return; } 
+
+    try {
+      if (!activeDoc.url) throw new Error("Đường dẫn tệp không tồn tại.");
+
+      if (activeDoc.type === 'pdf') {
+          if (!pdfjsLib) throw new Error("Thư viện PDF chưa tải xong.");
           const loadingTask = pdfjsLib.getDocument(activeDoc.url);
           const pdf = await loadingTask.promise;
-          setPdfDoc(pdf); setNumPages(pdf.numPages);
-        } catch { alert("Không thể tải PDF."); }
+          setPdfDoc(pdf); 
+          setNumPages(pdf.numPages);
+      } else if (activeDoc.type === 'docx' && mammoth) {
+          const response = await fetch(activeDoc.url);
+          if (!response.ok) {
+            throw new Error(`Không thể tải tệp tin (HTTP ${response.status})`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          // Verify if arrayBuffer is likely a zip (Starts with PK)
+          const arr = new Uint8Array(arrayBuffer).subarray(0, 2);
+          if (arr[0] !== 0x50 || arr[1] !== 0x4B) {
+             throw new Error("File không đúng định dạng DOCX (Invalid ZIP header)");
+          }
+
+          const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+          if (!result.value && result.messages.length > 0) {
+             console.warn("Mammoth messages:", result.messages);
+          }
+          setDocxContent(result.value || "<p>Không có nội dung văn bản.</p>");
+      } else {
+        throw new Error("Định dạng tệp không được hỗ trợ hiển thị trực tiếp.");
+      }
+    } catch (error: any) {
+       console.error("Error loading document:", error);
+       let message = "Có lỗi khi tải tài liệu.";
+       if (error.message.includes("Can't find end of central directory")) {
+          message = "Tệp DOCX bị lỗi hoặc không đúng định dạng.";
+       } else if (error.message.includes("HTTP")) {
+          message = "Không thể kết nối đến tệp tin.";
+       } else {
+          message = error.message;
+       }
+       setErrorMsg(message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => { loadContent(); }, [activeDoc]);
 
-  const isOfficeFile = ['docx', 'xlsx', 'pptx'].includes(activeDoc.type);
+  const isOfficeFile = ['xlsx', 'pptx'].includes(activeDoc.type);
+  const isDocx = activeDoc.type === 'docx';
   const isPdf = activeDoc.type === 'pdf';
   const isReport = activeDoc.id === 'rep';
 
@@ -202,7 +275,9 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
           {availableDocs.map((doc) => (
             <div key={doc.id} onClick={() => setActiveDoc(doc)} className={`group relative flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all border ${activeDoc.id === doc.id ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-white border-slate-50 hover:border-slate-200 hover:shadow-sm'}`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${activeDoc.id === doc.id ? 'bg-primary text-white' : 'bg-slate-100'}`}>
-                <span className="material-symbols-outlined">{doc.type === 'pdf' ? 'picture_as_pdf' : 'description'}</span>
+                <span className="material-symbols-outlined">
+                  {doc.type === 'pdf' ? 'picture_as_pdf' : doc.type === 'docx' ? 'article' : 'description'}
+                </span>
               </div>
               <div className="flex-1 overflow-hidden min-w-0">
                 {editingDocId === doc.id ? (
@@ -261,7 +336,20 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
            {loading ? (
              <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
                <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-               <p className="font-black text-xs uppercase tracking-widest">Đang tải...</p>
+               <p className="font-black text-xs uppercase tracking-widest">Đang tải tài liệu...</p>
+             </div>
+           ) : errorMsg ? (
+             <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+               <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center">
+                 <span className="material-symbols-outlined text-[32px]">error</span>
+               </div>
+               <div className="text-center">
+                 <h3 className="text-lg font-black text-slate-800 mb-1">Không thể hiển thị tài liệu</h3>
+                 <p className="text-sm text-slate-500 font-medium mb-6">{errorMsg}</p>
+                 <a href={activeDoc.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-white border border-slate-200 px-6 py-3 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-50 transition-all shadow-sm">
+                   <span className="material-symbols-outlined text-[18px]">download</span> Tải về thiết bị
+                 </a>
+               </div>
              </div>
            ) : (
              <div className="w-full h-full overflow-y-auto custom-scrollbar bg-slate-300 p-8 text-center">
@@ -274,6 +362,7 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                      </div>
                   </div>
                 )}
+                
                 {isPdf && pdfDoc && (
                    <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', transition: 'transform 0.2s ease-out' }}>
                      {Array.from(new Array(numPages), (el, index) => (
@@ -281,6 +370,11 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
                      ))}
                    </div>
                 )}
+
+                {isDocx && docxContent && (
+                   <div className="w-full max-w-5xl mx-auto bg-white shadow-2xl rounded-xl p-12 min-h-[800px] docx-content-render text-left animate-in fade-in zoom-in-95 duration-300" dangerouslySetInnerHTML={{__html: docxContent}} />
+                )}
+
                 {isOfficeFile && activeDoc.url && (
                    <div className="w-full h-full flex flex-col items-center min-h-[800px]">
                       <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(activeDoc.url)}`} className="w-full h-full max-w-5xl bg-white shadow-lg rounded-xl border border-slate-200" title="Viewer" frameBorder="0" />
@@ -290,6 +384,41 @@ const MeetingDetail: React.FC<MeetingDetailProps> = ({ meeting, onUpdateMeeting,
            )}
         </div>
       </main>
+
+       {/* AI Modal Overlay */}
+       {showAi && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white rounded-[2rem] w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[80vh]">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+                       <span className="material-symbols-outlined fill text-[20px]">smart_toy</span>
+                    </div>
+                    <div>
+                       <h2 className="text-lg font-black text-slate-900">AI Assistant</h2>
+                       <p className="text-xs text-slate-500 font-bold">Phân tích nội dung tài liệu</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setShowAi(false)} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors"><span className="material-symbols-outlined text-slate-400">close</span></button>
+              </div>
+              <div className="p-8 overflow-y-auto">
+                 {aiLoading ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-4">
+                       <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+                       <p className="text-sm font-bold text-slate-400 animate-pulse">Đang phân tích dữ liệu...</p>
+                    </div>
+                 ) : (
+                    <div className="prose prose-sm prose-slate max-w-none">
+                       <p className="text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">{aiResponse}</p>
+                    </div>
+                 )}
+              </div>
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                 <button onClick={() => setShowAi(false)} className="px-6 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs hover:bg-slate-800 transition-all">Đóng</button>
+              </div>
+           </div>
+        </div>
+       )}
     </div>
   );
 };
